@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 # Get your npsso from https://psnprofiles.com/psnawp
-npsso = ""
+npsso = "lu6TxZVE8LwVB7DfEh4DBzDlHd80DsubdpYpr4LV1eACfwo35RFiZTyOeA2MxPhO"
 # Create a PSNAWP object
 psn = PSNAWP(npsso)
 
