@@ -5,9 +5,14 @@ services:
   mongo:
     image: mongo
     restart: always
+    ports:
+      - 27017:27017
     environment:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: root
+    networks:
+      - gametrack
+
 
   mongo-express:
     image: mongo-express
@@ -19,3 +24,22 @@ services:
       ME_CONFIG_MONGODB_ADMINPASSWORD: root
       ME_CONFIG_MONGODB_URL: mongodb://root:root@mongo:27017/
       ME_CONFIG_BASICAUTH: false
+    networks:
+      - gametrack
+
+  fastapi:
+    build:
+      context: ./backend   # <-- the path to your Dockerfile
+    container_name: fastapi
+    depends_on:
+      - mongo
+    environment:
+      MONGO_INIT_USER: root
+      MONGO_INIT_PASS: root
+    ports:
+      - "8000:8000"
+    networks:
+      - gametrack
+
+networks:
+  gametrack:
