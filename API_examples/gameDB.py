@@ -1,24 +1,28 @@
-import rawgpy
+import os
+import sys
 
-rawg = rawgpy.RAWG("User-Agent, this should identify your app")
-results = rawg.search("Warframe")  # defaults to returning the top 5 results
-game = results[0]
-game.populate()  # get additional info for the game
+parent_dir = os.path.dirname(os.getcwd())
+wrapper_path = os.path.join(os.path.dirname(os.getcwd()), "RAWG_API_wrapper")
+sys.path.append(wrapper_path)
+from rawg_client import RAWGClient
+from dotenv import load_dotenv
 
-print(game.name)
+load_dotenv()
 
-print(game.description)
+KEY = os.getenv("RAWG_API_KEY")
 
-for store in game.stores:
-    print(store.url)
 
-rawg.login("someemail@example.com", "somepassword")
+client = RAWGClient(api_key=KEY)  # API Key from https://rawg.io/apidocs
 
-me = rawg.current_user()
+results = client.search_games("Super Mario Odyssey")
+game_id = results[0]["id"]
+metadata = client.get_game_metadata(game_id)
 
-print(me.name)  # print my name, equivalent to print(self.username)
-
-me.populate()  # gets additional info for the user
-
-for game in me.playing:
-    print(game.name)  # prints all the games i'm currently playing
+print("TITOLO:", metadata["name"])
+print("DATA USCITA:", metadata["released"])
+print("PIATTAFORME:", metadata["platforms"])
+print("GENERI:", metadata["genres"])
+print("SVILUPPATORI:", metadata["developers"])
+print("PUBLISHER:", metadata["publishers"])
+print("IMMAGINE:", metadata["cover_image"])
+print("DESCRIZIONE:", metadata["description"][:500])
