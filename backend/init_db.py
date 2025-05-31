@@ -35,6 +35,26 @@ def init_mongo():
                         "psn": "psn_api_key",
                         "xbox": "xbox_api_key",
                     },
+                    "platform_stats": {
+                        "steam": {
+                            "game_count": 0,
+                            "earned_achievements": 5,
+                            "play_count": 10,
+                            "full_trophies_count": 1,
+                        },
+                        "psn": {
+                            "game_count": 3,
+                            "earned_achievements": 0,
+                            "play_count": 15,
+                            "full_trophies_count": 1,
+                        },
+                        "xbox": {
+                            "game_count": 0,
+                            "earned_achievements": 2,
+                            "play_count": 8,
+                            "full_trophies_count": 1,
+                        },
+                    },
                 }
             )
 
@@ -45,10 +65,18 @@ def init_mongo():
             db["games"].insert_one(
                 {
                     "game_ID": "test_game_ID",
+                    "gameDB_ID": "test_gameDB_ID",
+                    "psn_game_ID": "test_psn_game_ID",
+                    "xbox_game_ID": "test_xbox_game_ID",
+                    "steam_game_ID": "test_steam_game_ID",
                     "name": "Test Game",
                     "platforms": ["steam", "psn", "xbox"],
                     "genres": ["Action", "Adventure"],
                     "release_date": "2023-01-01",
+                    "publisher": "Test Publisher",
+                    "developer": "Test Developer",
+                    "description": "This is a test game description.",
+                    "cover_image": "https://example.com/test_game_cover.jpg",
                 }
             )
 
@@ -61,26 +89,13 @@ def init_mongo():
                     "game_ID": "test_game_ID",
                     "user_ID": "Test Game",
                     "platforms": ["steam", "psn", "xbox"],
-                    "num_trophies_psn": "3",
-                    "num_achievements_steam": "5",
-                    "num_achievements_xbox": "0",
+                    "num_trophies_psn": 3,
+                    "num_achievements_steam": 5,
+                    "num_achievements_xbox": 0,
+                    "play_count" : 10,
                 }
             )
 
-            if "metadata" not in existing:
-                db.create_collection("metadata")
-                db["metadata"].create_index("gameDB_ID", unique=True)
-                
-            db["metadata"].insert_one(
-                {
-                    "gameDB_ID": "test_gameDB_ID",
-                    "name": "Test GameDB",
-                    "platforms": ["steam", "psn", "xbox"],
-                    "genres": ["Action", "Adventure"],
-                    "release_date": "2023-01-01",
-                    "game_ID": "test_game_ID",
-                }
-            )
 
             if "schedules" not in existing:
                 db.create_collection("schedules")
