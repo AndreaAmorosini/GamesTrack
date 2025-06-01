@@ -25,36 +25,23 @@ def init_mongo():
                     "username": "test_user",
                     "password": "test_password",
                     "email": "test@example.com",
-                    "platforms": {
-                        "steam": "steam_id",
-                        "psn": "psn_id",
-                        "xbox": "xbox_id",
-                    },
-                    "api_keys": {
-                        "steam": "steam_api_key",
-                        "psn": "psn_api_key",
-                        "xbox": "xbox_api_key",
-                    },
-                    "platform_stats": {
-                        "steam": {
-                            "game_count": 0,
-                            "earned_achievements": 5,
-                            "play_count": 10,
-                            "full_trophies_count": 1,
-                        },
-                        "psn": {
-                            "game_count": 3,
-                            "earned_achievements": 0,
-                            "play_count": 15,
-                            "full_trophies_count": 1,
-                        },
-                        "xbox": {
-                            "game_count": 0,
-                            "earned_achievements": 2,
-                            "play_count": 8,
-                            "full_trophies_count": 1,
-                        },
-                    },
+                }
+            )
+            
+            if "platforms-users" not in existing:
+                db.create_collection("platforms-users")
+                db["platforms-users"].create_index([("platform", ASCENDING), ("user_id", ASCENDING)], unique=True)
+                
+            db["platforms-users"].insert_one(
+                {
+                    "platform": "steam", #steam, psn, xbox
+                    "user_id": "test_user",
+                    "platform_ID": "steam_id",
+                    "api_key": "steam_api_key",
+                    "game_count": 0, # total games played on this platform
+                    "earned_achievements": 5, # total achievements earned
+                    "play_count": 10, # total play count
+                    "full_trophies_count": 1, # total full trophies count
                 }
             )
 
@@ -88,10 +75,8 @@ def init_mongo():
                 {
                     "game_ID": "test_game_ID",
                     "user_ID": "Test Game",
-                    "platforms": ["steam", "psn", "xbox"],
-                    "num_trophies_psn": 3,
-                    "num_achievements_steam": 5,
-                    "num_achievements_xbox": 0,
+                    "platform": "steam",
+                    "num_trophies": 3,
                     "play_count" : 10,
                 }
             )
