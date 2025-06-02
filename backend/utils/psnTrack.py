@@ -22,6 +22,15 @@ def sync_psn(npsso):
     #         + client.trophy_summary().earned_trophies.platinum
     #     )
     # )
+    
+    def get_np_communication_id(title_id):
+        try:
+            game_title = psn.game_title(title_id=title_id, account_id="me")
+            return game_title.np_communication_id
+        except Exception as e:
+            # print(f"Error retrieving np_communication_id for title_id {title_id}: {e}")
+            return None
+
 
     listOfListGames = []
     listOfListTrophy = []
@@ -30,7 +39,7 @@ def sync_psn(npsso):
     gameCount = 0
     totPlayTimeCount = 0
     for t in client.title_stats():
-        # print("name : " + t.name + " , title_id : " + str(t.title_id) + " , play_count : " + str(t.play_count) + " ,total_items_count : " + str(t.total_items_count))
+        np_communication_id = get_np_communication_id(t.title_id)
         listGame = [
             t.title_id,
             t.name,
@@ -40,10 +49,12 @@ def sync_psn(npsso):
             t.first_played_date_time,
             t.last_played_date_time,
             t.play_duration,
+            np_communication_id,
         ]
-        listOfListGames.append(listGame)
-        gameCount += 1
-        totPlayTimeCount += t.play_duration
+        if np_communication_id is not None:
+            listOfListGames.append(listGame)
+            gameCount += 1
+            totPlayTimeCount += t.play_duration
 
     earnedTrophyCount = 0
     totTrophyCount = 0
@@ -105,9 +116,16 @@ def sync_psn(npsso):
             "first_played_date_time",
             "last_played_date_time",
             "play_duration",
+            "np_communication_id",
         ],
     )
     # In caso fare join tra le due tabelle per ottenere la lista completa di giochi e dove non c'e la category PS5 o PS4 mettere Ps3
+    #Join tra lke due tabelle
+    # Si fa il merge in maniera right per includere anche i giochi PS3 da riempirne i dati poi tramite metadata
+
+    df_merged = pd.merge(df_games_psn, df_trophy_psn, on="np_communication_id", how="right")
+    df_merged
+
 
     print(
         "Game Count : "
@@ -121,11 +139,10 @@ def sync_psn(npsso):
     )
     
     return {
+        "fullGames": df_merged.to_dict(orient="records"),
         "gameCount": gameCount,
         "earnedTrophyCount": earnedTrophyCount,
         "totTrophyCount": totTrophyCount,
         "completeTrophyCount": completeTrophyCount,
         "totPlayTimeCount": totPlayTimeCount,
     }
-
-    # df_games_psn

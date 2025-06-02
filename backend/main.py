@@ -10,6 +10,7 @@ from datetime import datetime
 from bson import ObjectId
 from utils.psnTrack import sync_psn
 from utils.steamTrack import sync_steam
+from utils.gameDB import get_metadata
 
 
 class CustomHTTPException(HTTPException):
@@ -32,6 +33,7 @@ class User(BaseModel):
     psn_api_key: str | None = None
     xbox: str | None = None
     xbox_api_key: str | None = None
+    metadata_api_key: str | None = None  # Placeholder for future API key
 
 
 class Request(BaseModel):
@@ -60,9 +62,6 @@ def user_response(doc: dict) -> dict:
         "id": str(doc["_id"]),
         "email": doc["email"],
         "platforms": doc.get("platforms", {}),
-        "is_active": doc.get("is_active", False),
-        "created_at": doc.get("created_at"),
-        "updated_at": doc.get("updated_at"),
     }
 
 #TODO: Login
@@ -74,6 +73,7 @@ def register_user(user: User):
         "username": user.username,
         "email": user.email,
         "password": hash_password(user.password),
+        "metadata_api_key": user.metadata_api_key,  # Placeholder for future API key
     }
     try:
         result = db.users.insert_one(user_doc)
@@ -98,6 +98,8 @@ def update_user(user_id: str, update: User):
         update_fields["email"] = update.email
     if update.password:
         update_fields["password"] = hash_password(update.password)
+    if update.metadata_api_key:
+        update_fields["metadata_api_key"] = update.metadata_api_key
         
     platforms = {}
     if update.steam is not None:
@@ -147,8 +149,104 @@ def update_user(user_id: str, update: User):
         )
     return user_response(updated)
 
-
 #TODO: sync data (PSN, Xbox, Steam)
+@app.post("/sync/{user_id}/{platform}")
+def sync_user_platform(user_id: str, platform: str):
+    """Synchronize data for a user on a specified platform."""
+    # Validate user ID
+    try:
+        oid = ObjectId(user_id)
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID"
+        )
+    # Check if user exists
+    user = db.users.find_one({"_id": oid})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    metadata_api_key = user.get("metadata_api_key")
+    if not metadata_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Metadata API key is required for synchronization",
+        )
+    # Check platform linkage
+    link = db["platforms-users"].find_one({"user_id": user_id, "platform": platform})
+    if not link:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No linkage for platform {platform}",
+        )
+    # Retrieve API credentials
+    api_key = link.get("api_key")
+    
+    if api_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No API key found for platform {platform}",
+        )
+    
+    # Call corresponding sync function
+    if platform == "psn":
+        stats = sync_psn(api_key)
+        full_games_dict = stats["fullGames"]
+        #Insert all the games in database and update from metadata
+        for game in full_games_dict:
+            # Check if game already exists in the database
+            existing_game = db["games"].find_one({"name": game["name"] if game["name"] is not None else game["title_name"]})
+            if not existing_game:
+                #Retrieve metadata for the game
+                metadata = get_metadata(game["name"] if game["name"] is not None else game["title_name"], metadata_api_key)
+                result = db["games"].insert_one(
+                    {
+                        "game_ID": game["titleId"],
+                        "name": metadata.get("name", game["name"] if game["name"] is not None else game["title_name"]),
+                        "gameDB_ID": metadata.get("id"),
+                        "platforms": metadata.get("platforms", []),
+                        "genres": metadata.get("genres", []),
+                        "release_date": metadata.get("release_date"),
+                        "publisher": metadata.get("publishers"),
+                        "developer": metadata.get("developers"),
+                        "description": metadata.get("description"),
+                        "cover_image": metadata.get("cover_image"),
+                    }
+                )
+                game_id = result.inserted_id
+            else:
+                game_id = existing_game["_id"]
+            
+            db["games_user"].insert_one(
+                {
+                    "game_ID": game_id,
+                    "user_id": user_id,
+                    "platform": "psn",
+                    "num_trophies": game.get("earnedTrophy"),
+                    "play_count": game.get("play_duration"),
+                },
+            )
+
+        # Optionally update linkage summary fields
+        db["platform-users"].update_one(
+            {"user_id": user_id, "platform": "psn"},
+            {
+                "$set": {
+                    "game_count": stats.get("gameCount", 0),
+                    "earned_achievements": stats.get("earnedTrophyCount", 0),
+                    "play_count": stats.get("totPlayTimeCount", 0),
+                    "full_trophies_count": stats.get("completeTrophyCount", 0),
+                }
+            },
+        )
+        
+        return {"detail": "PSN data synchronized"}
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Platform not supported"
+        )
+
+
 #TODO: sync metadata
 #TODO: retrieve all games
 #TODO: retrieve game by ID

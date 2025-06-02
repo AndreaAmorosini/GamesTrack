@@ -1,28 +1,32 @@
 import os
+from dotenv import load_dotenv
 import sys
 
-parent_dir = os.path.dirname(os.getcwd())
-wrapper_path = os.path.join(os.path.dirname(os.getcwd()), "RAWG_API_wrapper")
-sys.path.append(wrapper_path)
+sys.path.append("RAWG_API_wrapper")
 from rawg_client import RAWGClient
-from dotenv import load_dotenv
 
-load_dotenv()
+def get_metadata(search_term: str, api_key: str) -> dict:
+    
+    client = RAWGClient(
+        api_key=api_key
+    )  # API Key from https://rawg.io/apidocs
 
-KEY = os.getenv("RAWG_API_KEY")
+    results = client.search_games(search_term)
+    game_id = results[0]["id"]
+    metadata = client.get_game_metadata(game_id)
 
-
-client = RAWGClient(api_key=KEY)  # API Key from https://rawg.io/apidocs
-
-results = client.search_games("Super Mario Odyssey")
-game_id = results[0]["id"]
-metadata = client.get_game_metadata(game_id)
-
-print("TITOLO:", metadata["name"])
-print("DATA USCITA:", metadata["released"])
-print("PIATTAFORME:", metadata["platforms"])
-print("GENERI:", metadata["genres"])
-print("SVILUPPATORI:", metadata["developers"])
-print("PUBLISHER:", metadata["publishers"])
-print("IMMAGINE:", metadata["cover_image"])
-print("DESCRIZIONE:", metadata["description"][:500])
+    return {
+        "id": results[0]["id"],
+        "name": metadata["name"],
+        "release_date": metadata["released"],
+        "platforms": metadata["platforms"],
+        "genres": metadata["genres"],
+        "developers": metadata["developers"],
+        "publishers": metadata["publishers"],
+        "cover_image": metadata["cover_image"],
+        "description": metadata["description"],
+    }
+    
+# if __name__ == "__main__":
+#     dict = get_metadata("The Witcher 3", "a3f6c2755cdf49b49911ec4576c3e6f7")
+#     print(dict)

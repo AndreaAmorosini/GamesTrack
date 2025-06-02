@@ -25,6 +25,7 @@ def init_mongo():
                     "username": "test_user",
                     "password": "test_password",
                     "email": "test@example.com",
+                    "metadata_api_key": "test_api_key",  # API key for metadata service
                 }
             )
             
