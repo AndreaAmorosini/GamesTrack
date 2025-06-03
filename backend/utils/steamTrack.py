@@ -4,100 +4,90 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
-
-KEY = os.getenv("STEAM_API_KEY")
-steam = Steam(KEY)
-
-user = steam.users.get_user_details("76561198074617013")
-# print(user)
-# print(user["player"])
-# print("PLAYER DETAILS")
-# for i in user["player"]:
-# print(str(i) + " : " + str(user["player"][i]))
-
-print(
-    "STEAMID: "
-    + str(user["player"]["steamid"])
-    + " NAME : "
-    + str(user["player"]["personaname"])
-)
+from gameDB import get_metadata
 
 
-# friends = steam.users.get_user_friends_list("76561198074617013")
-# print(friends)
+def sync_steam(steam_api_key):
+    steam = Steam(steam_api_key)
 
-steamId = str(user["player"]["steamid"])  # 76561198074617013
+    user = steam.users.get_user_details("76561198074617013")
 
-listOfList = []
+    print(
+        "STEAMID: "
+        + str(user["player"]["steamid"])
+        + " NAME : "
+        + str(user["player"]["personaname"])
+    )
 
+    steamId = str(user["player"]["steamid"])  # 76561198074617013
 
-# GAMES
-games = steam.users.get_owned_games(steamId)
-print("Game Count : " + str(games.get("game_count")))
-print("Recupero Dati : ")
-for i in tqdm(games.get("games")):
-    listGame = [i.get("appid"), i.get("name"), i.get("playtime_forever")]
-    # print("appId: " + str(i.get("appid")) + " / Name: " + str(i.get("name")) + " / Playtime: " + str(i.get("playtime_forever")))
-    try:
-        if i.get("playtime_forever") > 0:
-            gameS = steam.apps.get_user_stats(steamId, i.get("appid"))
-            achievements = steam.apps.get_user_achievements(steamId, i.get("appid"))
-            g = steam.apps.get_app_details(i.get("appid"))
-            totAchievement = int(
-                len(achievements.get("playerstats").get("achievements"))
-            )
-            earnedAchievement = len(gameS.get("playerstats").get("achievements"))
-            # print("Tot Achievement : " + str(totAchievement))
-            listGame.append(str(totAchievement))
-            # print("Earned Achievement : " + str(earnedAchievement))
-            listGame.append(str(earnedAchievement))
-            if totAchievement > 0:
-                percAchievement = (earnedAchievement / totAchievement) * 100
-                # print("Achievement % : " + str(round(percAchievement, 2)) + "%")
-                listGame.append(str(round(percAchievement, 2)) + "%")
+    listOfList = []
+
+    totEarnedAchievement = 0
+    totAchievement = 0
+    totPlayTimeCount = 0
+
+    # GAMES
+    games = steam.users.get_owned_games(steamId)
+    print("Game Count : " + str(games.get("game_count")))
+    print("Recupero Dati : ")
+    for i in tqdm(games.get("games")):
+        listGame = [i.get("appid"), i.get("name"), i.get("playtime_forever")]
+        totPlayTimeCount += i.get("playtime_forever")
+        # print("appId: " + str(i.get("appid")) + " / Name: " + str(i.get("name")) + " / Playtime: " + str(i.get("playtime_forever")))
+        try:
+            if i.get("playtime_forever") > 0:
+                gameS = steam.apps.get_user_stats(steamId, i.get("appid"))
+                achievements = steam.apps.get_user_achievements(steamId, i.get("appid"))
+                g = steam.apps.get_app_details(i.get("appid"))
+                totAchievement = int(
+                    len(achievements.get("playerstats").get("achievements"))
+                )
+                earnedAchievement = len(gameS.get("playerstats").get("achievements"))
+                totEarnedAchievement += earnedAchievement
+                totAchievement += totAchievement
+                # print("Tot Achievement : " + str(totAchievement))
+                listGame.append(str(totAchievement))
+                # print("Earned Achievement : " + str(earnedAchievement))
+                listGame.append(str(earnedAchievement))
+                if totAchievement > 0:
+                    percAchievement = (earnedAchievement / totAchievement) * 100
+                    # print("Achievement % : " + str(round(percAchievement, 2)) + "%")
+                    listGame.append(str(round(percAchievement, 2)) + "%")
+                else:
+                    # print("Achievement % : 0 %")
+                    listGame.append(str(0) + "%")
             else:
-                # print("Achievement % : 0 %")
+                # print("No Achievement Data")
+                listGame.append(str(0))
+                listGame.append(str(0))
                 listGame.append(str(0) + "%")
-        else:
+        except:
             # print("No Achievement Data")
             listGame.append(str(0))
             listGame.append(str(0))
             listGame.append(str(0) + "%")
-    except:
-        # print("No Achievement Data")
-        listGame.append(str(0))
-        listGame.append(str(0))
-        listGame.append(str(0) + "%")
-    listOfList.append(listGame)
+        listOfList.append(listGame)
 
-# TODO : organizzare dati in dataFrame
+    # TODO : organizzare dati in dataFrame
 
-arr = np.array(listOfList)
-df_games_steam = pd.DataFrame(
-    arr,
-    columns=[
-        "appId",
-        "Name",
-        "Playtime",
-        "TotAchievement",
-        "EarnedAchievement",
-        "Achievement%",
-    ],
-)
-print(df_games_steam)
+    arr = np.array(listOfList)
+    df_games_steam = pd.DataFrame(
+        arr,
+        columns=[
+            "title_id",
+            "name",
+            "play_duration",
+            "totTrophy",
+            "earnedTrophy",
+            "Achievement%",
+        ],
+    )
 
-
-searchGame = steam.apps.search_games("Dota 2")
-# print(searchGame)
-
-gameAchievement = steam.apps.get_user_achievements("76561198074617013", 220)
-# print(gameAchievement)
-
-gameStats = steam.apps.get_user_stats("76561198074617013", 220)
-# print(gameStats)
-
-gameDetail = steam.apps.get_app_details(220)
-# print(gameDetail)
+    return {
+        "fullGames": df_games_steam.to_dict(orient="records"),
+        "gameCount": games.get("game_count"),
+        "earnedTrophyCount": totEarnedAchievement,
+        "totTrophyCount": totAchievement,
+        "totPlayTimeCount": totPlayTimeCount,
+    }
