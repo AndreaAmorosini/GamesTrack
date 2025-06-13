@@ -150,6 +150,7 @@ def update_user(user_id: str, update: User):
     return user_response(updated)
 
 #TODO: sync data (PSN, Xbox, Steam)
+#Forse fare che i metadata del gioco vengono recuperati man mano quando si apre la pagina di dettaglio del gioco
 @app.post("/sync/{user_id}/{platform}")
 def sync_user_platform(user_id: str, platform: str):
     """Synchronize data for a user on a specified platform."""

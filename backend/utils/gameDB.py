@@ -2,8 +2,8 @@ import os
 from dotenv import load_dotenv
 import sys
 
-sys.path.append("RAWG_API_wrapper")
-from rawg_client import RAWGClient
+# sys.path.append("RAWG_API_wrapper")
+from .RAWG_API_wrapper.rawg_client import RAWGClient
 
 def get_metadata(search_term: str, api_key: str) -> dict:
     

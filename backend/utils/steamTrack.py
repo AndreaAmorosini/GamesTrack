@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import os
-from gameDB import get_metadata
 
 
 def sync_steam(steam_api_key):

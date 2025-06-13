@@ -30,6 +30,7 @@ services:
   fastapi:
     build:
       context: ./backend   # <-- the path to your Dockerfile
+
     container_name: fastapi
     depends_on:
       - mongo

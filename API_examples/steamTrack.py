@@ -20,10 +20,6 @@ def sync_steam(steam_api_key):
         + str(user["player"]["personaname"])
     )
 
-
-    # friends = steam.users.get_user_friends_list("76561198074617013")
-    # print(friends)
-
     steamId = str(user["player"]["steamid"])  # 76561198074617013
 
     listOfList = []
@@ -90,6 +86,7 @@ def sync_steam(steam_api_key):
 
     
     return {
+        "fullGames": df_games_steam.to_dict(orient="records"),
         "gameCount": games.get("game_count"),
         "earnedTrophyCount": totEarnedAchievement,
         "totTrophyCount": totAchievement,
