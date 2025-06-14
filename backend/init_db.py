@@ -60,11 +60,18 @@ def init_mongo():
                     "name": "Test Game",
                     "platforms": ["steam", "psn", "xbox"],
                     "genres": ["Action", "Adventure"],
+                    "game_modes": ["Single-player", "Multiplayer"],
                     "release_date": "2023-01-01",
                     "publisher": "Test Publisher",
                     "developer": "Test Developer",
                     "description": "This is a test game description.",
                     "cover_image": "https://example.com/test_game_cover.jpg",
+                    "screenshots": [
+                        "https://example.com/test_game_screenshot1.jpg",
+                        "https://example.com/test_game_screenshot2.jpg"
+                    ],
+                    "total_rating" : 90.8,
+                    "total_rating_count" : 1000,
                 }
             )
 

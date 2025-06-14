@@ -47,3 +47,4 @@ numpy
 psnawp
 python-steam-api
 tqdm
+igdb-api-v4

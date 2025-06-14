@@ -12,25 +12,18 @@ def sync_psn(npsso):
 
     # Profile of npsso owner
     client = psn.me()
-    # print("account_Id : " + client.account_id + ", online_id : " + client.online_id)
-    # print(
-    #     "totTrophies : "
-    #     + str(
-    #         client.trophy_summary().earned_trophies.bronze
-    #         + client.trophy_summary().earned_trophies.silver
-    #         + client.trophy_summary().earned_trophies.gold
-    #         + client.trophy_summary().earned_trophies.platinum
-    #     )
-    # )
     
     def get_np_communication_id(title_id):
         try:
             game_title = psn.game_title(title_id=title_id, account_id="me")
-            return game_title.np_communication_id
+            product_id = game_title.get_details()[0].get("id", None)
+            return {
+                "np_communication_id": game_title.np_communication_id,
+                "product_id": product_id,
+            }
         except Exception as e:
             # print(f"Error retrieving np_communication_id for title_id {title_id}: {e}")
-            return None
-
+            return {"np_communication_id": None, "product_id": None}
 
     listOfListGames = []
     listOfListTrophy = []
@@ -39,7 +32,9 @@ def sync_psn(npsso):
     gameCount = 0
     totPlayTimeCount = 0
     for t in client.title_stats():
-        np_communication_id = get_np_communication_id(t.title_id)
+        ids = get_np_communication_id(t.title_id)
+        np_communication_id = ids["np_communication_id"]
+        product_id = ids["product_id"]
         listGame = [
             t.title_id,
             t.name,
@@ -50,6 +45,7 @@ def sync_psn(npsso):
             t.last_played_date_time,
             t.play_duration,
             np_communication_id,
+            product_id
         ]
         if np_communication_id is not None:
             listOfListGames.append(listGame)
@@ -117,6 +113,7 @@ def sync_psn(npsso):
             "last_played_date_time",
             "play_duration",
             "np_communication_id",
+            "product_id",
         ],
     )
     # In caso fare join tra le due tabelle per ottenere la lista completa di giochi e dove non c'e la category PS5 o PS4 mettere Ps3
