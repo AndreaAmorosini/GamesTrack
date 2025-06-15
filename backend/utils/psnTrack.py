@@ -3,7 +3,9 @@ from tqdm import tqdm
 import pandas as pd
 import numpy as np
 import os
-from dotenv import load_dotenv
+from psnawp_api.models import SearchDomain
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+import time
 
 
 def sync_psn(npsso):
@@ -25,6 +27,29 @@ def sync_psn(npsso):
             # print(f"Error retrieving np_communication_id for title_id {title_id}: {e}")
             return {"np_communication_id": None, "product_id": None}
 
+
+    def get_np_communication_id_with_timeout(title_id, timeout=5):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(get_np_communication_id, title_id)
+            try:
+                return future.result(timeout=timeout)
+            except TimeoutError:
+                return {"np_communication_id": None, "product_id": None}
+
+
+    def get_product_id_by_title(title_name):
+        try:
+            search = psn.search(
+                search_query=title_name, search_domain=SearchDomain.FULL_GAMES
+            )
+            for i in search:
+                product_id = i.get("id", None)
+                break
+            return product_id if product_id else None
+        except Exception as e:
+            # print(f"Error retrieving product_id for game title {title_name}: {e}")
+            return None
+
     listOfListGames = []
     listOfListTrophy = []
 
@@ -32,7 +57,7 @@ def sync_psn(npsso):
     gameCount = 0
     totPlayTimeCount = 0
     for t in client.title_stats():
-        ids = get_np_communication_id(t.title_id)
+        ids = get_np_communication_id_with_timeout(t.title_id)
         np_communication_id = ids["np_communication_id"]
         product_id = ids["product_id"]
         listGame = [
@@ -51,11 +76,21 @@ def sync_psn(npsso):
             listOfListGames.append(listGame)
             gameCount += 1
             totPlayTimeCount += t.play_duration
+            time.sleep(1.5)
+
+    np_communication_id_list = [
+        game[8] for game in listOfListGames if game[8] is not None
+    ]
 
     earnedTrophyCount = 0
     totTrophyCount = 0
     completeTrophyCount = 0
     for tr in tqdm(client.trophy_titles()):
+        if tr.np_communication_id not in np_communication_id_list:
+            product_id = get_product_id_by_title(tr.title_name)
+            time.sleep(1.5)
+        else:
+            product_id = next((game[9] for game in listOfListGames if game[8] == tr.np_communication_id), None)
         listGame = [
             tr.np_communication_id,
             tr.title_name,
@@ -72,7 +107,7 @@ def sync_psn(npsso):
                 + tr.earned_trophies.platinum
             ),
             (str(tr.progress) + "%"),
-            tr.np_title_id,
+            product_id
         ]
         listOfListTrophy.append(listGame)
         earnedTrophyCount += (
@@ -98,7 +133,7 @@ def sync_psn(npsso):
             "totTrophy",
             "earnedTrophy",
             "percTrophy",
-            "np_title_id",
+            "product_id",
         ],
     )
     df_games_psn = pd.DataFrame(
