@@ -95,6 +95,7 @@ def init_mongo():
 
             # your init logic here...
             print("MongoDB connected and initialized.")
+            client.close()
             return
         except ServerSelectionTimeoutError:
             print(f"Mongo not ready, retrying ({attempt + 1}/10)...")

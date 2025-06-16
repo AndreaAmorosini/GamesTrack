@@ -1,6 +1,6 @@
 from typing import Union
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, Depends
 from pydantic import BaseModel, EmailStr, Field
 from init_db import init_mongo
 import os
@@ -11,6 +11,7 @@ from bson import ObjectId
 from utils.psnTrack import sync_psn
 from utils.steamTrack import sync_steam
 from utils.gameDB import get_metadata
+from utils.db import get_db
 
 
 class CustomHTTPException(HTTPException):
@@ -67,7 +68,7 @@ def user_response(doc: dict) -> dict:
 #TODO: Login
 #TODO: Register
 @app.post("/register", status_code=status.HTTP_201_CREATED)
-def register_user(user: User):
+def register_user(user: User, db=Depends(get_db)):
     """Register a new user with email, password, and optional platform IDs."""
     user_doc = {
         "username": user.username,

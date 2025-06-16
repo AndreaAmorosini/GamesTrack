@@ -48,3 +48,5 @@ psnawp
 python-steam-api
 tqdm
 igdb-api-v4
+PyJWT
+passlib[bcrypt]
