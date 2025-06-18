@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, Annotated
 
 from fastapi import FastAPI, HTTPException, status, Depends
 from pydantic import BaseModel, EmailStr, Field
@@ -12,6 +12,8 @@ from utils.psnTrack import sync_psn
 from utils.steamTrack import sync_steam
 from utils.gameDB import get_metadata
 from utils.db import get_db
+from utils.user_utils import router as user_utils_router
+from utils.user_utils import get_password_hash, verify_password, get_current_active_user
 
 
 class CustomHTTPException(HTTPException):
@@ -32,8 +34,6 @@ class User(BaseModel):
     steam_api_key: str | None = None
     psn: str | None = None
     psn_api_key: str | None = None
-    xbox: str | None = None
-    xbox_api_key: str | None = None
     metadata_api_key: str | None = None  # Placeholder for future API key
 
 
@@ -43,6 +43,7 @@ class Request(BaseModel):
     game_search_term: str | None = None
 
 app = FastAPI()
+app.include_router(user_utils_router, prefix="/users", tags=["users"])
 
 test_env = os.getenv("MONGO_INIT_USER"), os.getenv("MONGO_INIT_PASS")
 mongo_uri = f"mongodb://{os.getenv('MONGO_INIT_USER')}:{os.getenv('MONGO_INIT_PASS')}@mongo:27017/"
@@ -73,11 +74,52 @@ def register_user(user: User, db=Depends(get_db)):
     user_doc = {
         "username": user.username,
         "email": user.email,
-        "password": hash_password(user.password),
-        "metadata_api_key": user.metadata_api_key,  # Placeholder for future API key
+        "password": get_password_hash(user.password),
     }
+    #Vedere di codificare le api key in modo che non siano visibili
+    if user.metadata_api_key is not None:
+        user_doc["metadata_api_key"] = user.metadata_api_key
     try:
         result = db.users.insert_one(user_doc)
+        user_id = str(result.inserted_id)
+        if user.steam_api_key is not None:
+            platform_user_doc = {
+                "platform": "steam",
+                "user_id": user_id,
+                "platform_ID": user.steam,
+                "api_key": user.steam_api_key,
+                "game_count": 0,
+                "earned_achievements": 0,
+                "play_count": 0,
+                "full_trophies_count": 0,
+            }
+            try:
+                db["platforms-users"].insert_one(platform_user_doc)
+            except errors.DuplicateKeyError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Steam platform already linked",
+                )
+        
+        if user.psn_api_key is not None:
+            platform_user_doc = {
+                "platform": "psn",
+                "user_id": user_id,
+                "platform_ID": user.psn,
+                "api_key": user.psn_api_key,
+                "game_count": 0,
+                "earned_achievements": 0,
+                "play_count": 0,
+                "full_trophies_count": 0,
+            }
+            try:
+                db["platforms-users"].insert_one(platform_user_doc)
+            except errors.DuplicateKeyError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="PSN platform already linked",
+                )
+                
         return {"id": str(result.inserted_id), "email": user.email}
     except errors.DuplicateKeyError:
         raise HTTPException(
@@ -85,11 +127,15 @@ def register_user(user: User, db=Depends(get_db)):
         )
 #TODO: update user
 #Update the user data by ObjectID by adding the platform IDs and API keys ready to retrieve data by external job
-@app.patch("/users/{user_id}", response_model=dict)
-def update_user(user_id: str, update: User):
+@app.patch("/users/update", response_model=dict)
+def update_user(
+    update: User,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db)
+):
     """Update an existing user's data by ObjectId."""
     try:
-        oid = ObjectId(user_id)
+        oid = ObjectId(str(current_user.id))
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID"
@@ -98,42 +144,68 @@ def update_user(user_id: str, update: User):
     if update.email:
         update_fields["email"] = update.email
     if update.password:
-        update_fields["password"] = hash_password(update.password)
+        update_fields["password"] = get_password_hash(update.password)
     if update.metadata_api_key:
         update_fields["metadata_api_key"] = update.metadata_api_key
         
-    platforms = {}
     if update.steam is not None:
-        platforms["steam"] = update.steam
-        db["platforms-users"].insert_one(
-            {
-                "platform": "steam",
-                "user_id": user_id,
-                "platform_ID": update.steam,
-                "api_key": update.steam_api_key,  # Placeholder for future API key
-                "game_count": 0,
-                "earned_achievements": 0,
-                "play_count": 0,
-                "full_trophies_count": 0,
-            }
-        )
-    if update.psn is not None:
-        platforms["psn"] = update.psn
-        db["platforms-users"].insert_one(
-            {
-                "platform": "psn",
-                "user_id": user_id,
-                "platform_ID": update.psn,
-                "api_key": update.psn_api_key,  # Placeholder for future API key
-                "game_count": 0,
-                "earned_achievements": 0,
-                "play_count": 0,
-                "full_trophies_count": 0,
-            }
-        )
-    if update.xbox is not None:
-        platforms["xbox"] = update.xbox
-    
+        link = db["platforms-users"].find_one({"user_id": str(current_user.id), "platform": "steam"})
+        if link:
+            db["platforms-users"].update_one(
+                {"user_id": str(current_user.id), "platform": "steam"},
+                {
+                    "$set": {
+                        "platform_ID": update.steam
+                        if update.steam
+                        else link.get("platform_ID"),
+                        "api_key": update.steam_api_key
+                        if update.steam_api_key
+                        else link.get("api_key"),
+                    }
+                },
+            )
+        else:
+            db["platforms-users"].insert_one(
+                {
+                    "platform": "steam",
+                    "user_id": str(current_user.id),
+                    "platform_ID": update.steam,
+                    "api_key": update.steam_api_key,  # Placeholder for future API key
+                    "game_count": 0,
+                    "earned_achievements": 0,
+                    "play_count": 0,
+                    "full_trophies_count": 0,
+                }
+            )
+    if update.psn is not None or update.psn_api_key is not None:
+        link = db["platforms-users"].find_one({"user_id": str(current_user.id), "platform": "psn"})
+        if link:
+            db["platforms-users"].update_one(
+                {"user_id": str(current_user.id), "platform": "steam"},
+                {
+                    "$set": {
+                        "platform_ID": update.psn
+                        if update.psn
+                        else link.get("platform_ID"),
+                        "api_key": update.psn_api_key
+                        if update.psn_api_key
+                        else link.get("api_key"),
+                    }
+                },
+            )
+        else:
+            db["platforms-users"].insert_one(
+                {
+                    "platform": "psn",
+                    "user_id": str(current_user.id),
+                    "platform_ID": update.psn,
+                    "api_key": update.psn_api_key,  # Placeholder for future API key
+                    "game_count": 0,
+                    "earned_achievements": 0,
+                    "play_count": 0,
+                    "full_trophies_count": 0,
+                }
+            )    
     
     if not update_fields:
         raise HTTPException(
@@ -152,8 +224,8 @@ def update_user(user_id: str, update: User):
 
 #TODO: sync data (PSN, Xbox, Steam)
 #Forse fare che i metadata del gioco vengono recuperati man mano quando si apre la pagina di dettaglio del gioco
-@app.post("/sync/{user_id}/{platform}")
-def sync_user_platform(user_id: str, platform: str):
+@app.post("/sync/{platform}")
+def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
     """Synchronize data for a user on a specified platform."""
     
     if platform not in ["psn", "steam", "xbox"]:
@@ -164,7 +236,7 @@ def sync_user_platform(user_id: str, platform: str):
     
     # Validate user ID
     try:
-        oid = ObjectId(user_id)
+        oid = ObjectId(str(current_user.id))
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID"
@@ -182,7 +254,7 @@ def sync_user_platform(user_id: str, platform: str):
             detail="Metadata API key is required for synchronization",
         )
     # Check platform linkage
-    link = db["platforms-users"].find_one({"user_id": user_id, "platform": platform})
+    link = db["platforms-users"].find_one({"user_id": str(current_user.id), "platform": platform})
     if not link:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -234,7 +306,7 @@ def sync_user_platform(user_id: str, platform: str):
         db["games_user"].insert_one(
             {
                 "game_ID": game_id,
-                "user_id": user_id,
+                "user_id": str(current_user.id),
                 "platform": platform,
                 "num_trophies": game.get("earnedTrophy"),
                 "play_count": game.get("play_duration"),
@@ -243,7 +315,7 @@ def sync_user_platform(user_id: str, platform: str):
 
     # Optionally update linkage summary fields
     db["platform-users"].update_one(
-        {"user_id": user_id, "platform": platform},
+        {"user_id": str(current_user.id), "platform": platform},
         {
             "$set": {
                 "game_count": stats.get("gameCount", 0),

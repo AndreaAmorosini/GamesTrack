@@ -41,10 +41,10 @@ typing_extensions==4.13.2
 uvicorn==0.34.2
 watchfiles==1.0.5
 websockets==15.0.1
-bcrypt==4.3.0
+bcrypt==4.0.1
 pandas
 numpy
-psnawp
+psnawp==2.2.0
 python-steam-api
 tqdm
 igdb-api-v4

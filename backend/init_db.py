@@ -19,6 +19,7 @@ def init_mongo():
             if "users" not in existing:
                 db.create_collection("users")
                 db["users"].create_index("email", unique=True)
+                db["users"].create_index("username", unique=True)
             
             db["users"].insert_one(
                 {
