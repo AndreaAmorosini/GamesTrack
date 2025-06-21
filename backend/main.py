@@ -15,8 +15,10 @@ from utils.igdb_api import IGDBAutoAuthClient
 from utils.db import get_db
 from utils.user_utils import router as user_utils_router
 from utils.user_utils import get_password_hash, verify_password, get_current_active_user
+import logging
 
-
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+os.environ["PYTHONUNBUFFERED"] = "1"  # Disable output buffering for real-time logs
 sys.stdout = sys.__stdout__
 class CustomHTTPException(HTTPException):
     def __init__(self, status_code: int, detail: str, error_code: int):

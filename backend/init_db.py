@@ -4,13 +4,19 @@ import os
 from pymongo.errors import ServerSelectionTimeoutError
 import time
 from utils.igdb_api import IGDBAutoAuthClient
+import logging
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 def init_mongo():
     uri = f"mongodb://{os.environ['MONGO_INIT_USER']}:{os.environ['MONGO_INIT_PASS']}@mongo:27017/"
     max_retries = 20
     delay = 3
     
-    print(f"Initializing IGDB client with client ID {os.environ['IGDB_CLIENT_ID']} and client secret {os.environ['IGDB_CLIENT_SECRET']}")
+    logging.info(f"Initializing IGDB client with client ID {os.environ['IGDB_CLIENT_ID']} and client secret {os.environ['IGDB_CLIENT_SECRET']}")
     igdb_client = IGDBAutoAuthClient(
         client_id=os.environ["IGDB_CLIENT_ID"],
         client_secret=os.environ["IGDB_CLIENT_SECRET"]
@@ -22,7 +28,7 @@ def init_mongo():
             client = MongoClient(uri, serverSelectionTimeoutMS=2000)
             db = client["game_tracker"]
             db.command("ping")  # test connection
-            print("Creating Users collection")
+            logging.info("Creating Users collection")
             existing = db.list_collection_names()
             if "users" not in existing:
                 db.create_collection("users")
@@ -41,7 +47,7 @@ def init_mongo():
             user_id = str(result.inserted_id)
             
             #Check which info on genres, platforms, publishers and developers can be retrieved from igdb
-            print("Creating Platforms")
+            logging.info("Creating Platforms")
             if "platforms" not in existing:
                 db.create_collection("platforms")
                 db["platforms"].create_index("platform_name", unique=True)
@@ -66,46 +72,42 @@ def init_mongo():
                 platIdTest = resultPlat.inserted_ids  # Store the inserted IDs if needed
             
             
-            print("Iporting IGDB data and creating console_platforms")
             if "console_platforms" not in existing:
                 db.create_collection("console_platforms")
                 db["console_platforms"].create_index("igdb_id", unique=True)
                 
                 console_platforms_remote = igdb_client.get_all_game_platforms()
-                print(f"Found {len(console_platforms_remote)} console platforms from IGDB")
+                logging.info(f"Found {len(console_platforms_remote)} console platforms from IGDB")
                 resultConsole = db.console_platforms.insert_many(console_platforms_remote)
                 consolePlatIdTest = resultConsole.inserted_ids  # Store the inserted IDs if needed
             
             
-            print("Genres")
             if "genres" not in existing:
                 db.create_collection("genres")
                 db["genres"].create_index("igdb_id", unique=True)
                 
                 genres_remote = igdb_client.get_all_game_genres()
-                print(f"Found {len(genres_remote)} genres from IGDB")
+                logging.info(f"Found {len(genres_remote)} genres from IGDB")
                 resultGenres = db.genres.insert_many(genres_remote)
                 genresIdTest = resultGenres.inserted_ids  # Store the inserted IDs if needed
                 
                 
-            print("Companies")
             if "companies" not in existing:
                 db.create_collection("companies")
                 db["companies"].create_index("igdb_id", unique=True)
                 
                 companies_remote = igdb_client.get_all_game_companies()
-                print(f"Found {len(companies_remote)} companies from IGDB")
+                logging.info(f"Found {len(companies_remote)} companies from IGDB")
                 resultPub = db.companies.insert_many(companies_remote)
                 compIdTest = resultPub.inserted_ids  # Store the inserted IDs if needed       
             
             
-            print("Game Modes")
             if "game_modes" not in existing:
                 db.create_collection("game_modes")
                 db["game_modes"].create_index("igdb_id", unique=True)
                 
                 game_modes_remote = igdb_client.get_all_game_modes()
-                print(f"Found {len(game_modes_remote)} game modes from IGDB")
+                logging.info(f"Found {len(game_modes_remote)} game modes from IGDB")
                 resultModes = db.game_modes.insert_many(game_modes_remote)
                 gameModesId = resultModes.inserted_ids  # Store the inserted IDs if needed    
             
@@ -189,10 +191,10 @@ def init_mongo():
                 db.create_collection("schedules")
 
             # your init logic here...
-            print("MongoDB connected and initialized.")
+            logging.info("MongoDB connected and initialized.")
             client.close()
             return
         except ServerSelectionTimeoutError:
-            print(f"Mongo not ready, retrying ({attempt + 1}/10)...")
+            logging.error(f"Mongo not ready, retrying ({attempt + 1}/10)...")
             time.sleep(delay)
     raise Exception("Failed to connect to MongoDB after several attempts")
