@@ -50,3 +50,4 @@ tqdm
 igdb-api-v4
 PyJWT
 passlib[bcrypt]
+pycountry

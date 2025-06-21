@@ -1,5 +1,5 @@
 from typing import Union, Annotated
-
+import sys
 from fastapi import FastAPI, HTTPException, status, Depends
 from pydantic import BaseModel, EmailStr, Field
 from init_db import init_mongo
@@ -11,11 +11,13 @@ from bson import ObjectId
 from utils.psnTrack import sync_psn
 from utils.steamTrack import sync_steam
 from utils.gameDB import get_metadata
+from utils.igdb_api import IGDBAutoAuthClient
 from utils.db import get_db
 from utils.user_utils import router as user_utils_router
 from utils.user_utils import get_password_hash, verify_password, get_current_active_user
 
 
+sys.stdout = sys.__stdout__
 class CustomHTTPException(HTTPException):
     def __init__(self, status_code: int, detail: str, error_code: int):
         super().__init__(status_code=status_code, detail=detail)
@@ -49,6 +51,11 @@ test_env = os.getenv("MONGO_INIT_USER"), os.getenv("MONGO_INIT_PASS")
 mongo_uri = f"mongodb://{os.getenv('MONGO_INIT_USER')}:{os.getenv('MONGO_INIT_PASS')}@mongo:27017/"
 client = MongoClient(mongo_uri)
 db = client["game_tracker"]
+
+igdb_client = IGDBAutoAuthClient(
+    client_id=os.getenv("IGDB_CLIENT_ID"),
+    client_secret=os.getenv("IGDB_CLIENT_SECRET")
+)
 
 
 @app.get("/")
@@ -275,28 +282,38 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
     #Insert all the games in database and update from metadata
     for game in full_games_dict:
         # Check if game already exists in the database
+        external_id = None
         if platform == "steam":
             existing_game = db["games"].find_one({"name": game["name"]})
+            external_id = game.get("title_id", None)
         elif platform == "psn":
             existing_game = db["games"].find_one({"name": game["name"] if game["name"] is not None else game["title_name"]})
+            external_id = game.get("product_id", None)
         if not existing_game:
             #Retrieve metadata for the game
             if platform == "steam":
-                metadata = get_metadata(game["name"], metadata_api_key)
+                metadata = igdb_client.get_game_metadata(game["name"], external_id=external_id)
             elif platform == "psn":
-                metadata = get_metadata(game["name"] if game["name"] is not None else game["title_name"], metadata_api_key)
+                metadata = igdb_client.get_game_metadata(game["name"] if game["name"] is not None else game["title_name"], external_id=external_id)
+            #TODO: Da rivedere assegnazione dei campi
             result = db["games"].insert_one(
                 {
                     "game_ID": game["titleId"],
                     "name": metadata.get("name", game["name"] if game["name"] is not None else game["title_name"]),
                     "gameDB_ID": metadata.get("id"),
+                    "psn_game_ID": metadata.get("psn_id"),
+                    "steam_game_ID": metadata.get("steam_id"),
                     "platforms": metadata.get("platforms", []),
                     "genres": metadata.get("genres", []),
+                    "game_modes": metadata.get("game_modes", []),
                     "release_date": metadata.get("release_date"),
                     "publisher": metadata.get("publishers"),
                     "developer": metadata.get("developers"),
                     "description": metadata.get("description"),
                     "cover_image": metadata.get("cover_image"),
+                    "screenshots": metadata.get("screenshots", []),
+                    "total_rating": metadata.get("total_rating", 0.0),
+                    "total_rating_count": metadata.get("total_rating_count", 0),
                 }
             )
             game_id = result.inserted_id
@@ -326,7 +343,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         },
     )
     
-    return {"detail": "${platform} data synchronized"}
+    return {"detail": f"${platform} data synchronized"}
 
 #TODO: sync metadata
 #TODO: retrieve all games

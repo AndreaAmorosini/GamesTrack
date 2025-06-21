@@ -2,6 +2,13 @@ import time
 import requests
 from igdb.wrapper import IGDBWrapper
 import json
+import pycountry
+
+def country_name_from_numeric_code(numeric_code):
+    # Convert to zero-padded 3-digit string, as per ISO 3166-1 standard
+    code_str = str(numeric_code).zfill(3)
+    country = pycountry.countries.get(numeric=code_str)
+    return country.name if country else None
 
 
 class IGDBAutoAuthClient:
@@ -40,8 +47,24 @@ class IGDBAutoAuthClient:
         self._ensure_token_valid()
         return self.query("games", query)
     
-    def get_game_metadata(self, game_name: str):
-        query = f'''
+    def get_game_metadata(self, game_name: str, external_id: str = None):
+        if external_id is not None:
+            external_game_query = f'''
+            fields
+            id,
+            game,
+            name,
+            uid,
+            category;
+            where uid="{external_id}" & category = (1,36);
+            '''       
+            external_game_result = self.query("external_games", external_game_query)
+            
+            game_id = external_game_result[0].get("game", None) if external_game_result else None
+        else:
+            game_id = None
+        
+        query = '''
         fields 
         name,
         summary,
@@ -76,9 +99,16 @@ class IGDBAutoAuthClient:
         collection.name,
         franchise.name,
         similar_games.name;
-        where name ~ *"{game_name}"* & category = 0;
-        limit 1;
         '''
+
+        if game_id:
+            query.append(f'where id = {game_id};')
+        else:
+            query.append(f'''
+            where name ~ *"{game_name}"* & category = 0;
+            limit 1;
+            ''')
+            
         result = self.query_games(query)
         result = json.loads(result)
         
@@ -122,3 +152,95 @@ class IGDBAutoAuthClient:
         }
         
         return game_metadata
+    
+    def get_all_game_genres(self):
+        offset = 0
+        genres = []
+        while True:
+            query = f'''
+            fields id, name;
+            limit 500;
+            offset {offset};
+            '''
+            result = self.query("genres", query)
+            result = json.loads(result)
+            if not result:
+                break
+            for genre in result:
+                gen = {
+                    "igdb_id": genre["id"],
+                    "genre_name": genre["name"]
+                }
+                genres.append(gen)
+            offset += 500
+        return genres
+    
+    def get_all_game_platforms(self):
+        offset = 0
+        platforms = []
+        while True:
+            query = f'''
+            fields id, name, abbreviation, generation;
+            limit 500;
+            offset {offset};
+            '''
+            result = self.query("platforms", query)
+            result = json.loads(result)
+            if not result:
+                break
+            for platform in result:
+                plat = {
+                    "igdb_id": platform["id"],
+                    "platform_name": platform["name"],
+                    "abbreviation": platform.get("abbreviation", ""),
+                    "generation": platform.get("generation", 0)
+                }
+                platforms.append(plat)
+            offset += 500
+        return platforms
+
+    def get_all_game_modes(self):
+        offset = 0
+        modes = []
+        while True:
+            query = f'''
+            fields id, name;
+            limit 500;
+            offset {offset};
+            '''
+            result = self.query("game_modes", query)
+            result = json.loads(result)
+            if not result:
+                break
+            for mode in result:
+                mod = {
+                    "igdb_id": mode["id"],
+                    "game_mode_name": mode["name"]
+                }
+                modes.append(mod)
+            offset += 500
+        return modes
+    
+    def get_all_game_companies(self):
+        offset = 0
+        companies = []
+        while True:
+            query = f'''
+            fields id, name, country;
+            limit 500;
+            offset {offset};
+            '''
+            result = self.query("companies", query)
+            result = json.loads(result)
+            if not result:
+                break
+            for company in result:
+                country_name = country_name_from_numeric_code(company.get("country", 0))
+                comp = {
+                    "igdb_id": company["id"],
+                    "company_name": company["name"],
+                    "country": country_name
+                }
+                companies.append(comp)
+            offset += 500
+        return companies
