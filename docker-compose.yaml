@@ -12,6 +12,8 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: root
     networks:
       - gametrack
+    volumes:
+      - mongo_data:/data/db
 
 
   mongo-express:
@@ -53,6 +55,9 @@ services:
       - fastapi
     networks:
       - gametrack
+
+volumes:
+  mongo_data:
 
 networks:
   gametrack:

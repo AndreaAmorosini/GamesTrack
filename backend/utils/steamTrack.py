@@ -38,7 +38,6 @@ def sync_steam(steam_api_key):
             if i.get("playtime_forever") > 0:
                 gameS = steam.apps.get_user_stats(steamId, i.get("appid"))
                 achievements = steam.apps.get_user_achievements(steamId, i.get("appid"))
-                g = steam.apps.get_app_details(i.get("appid"))
                 totAchievement = int(
                     len(achievements.get("playerstats").get("achievements"))
                 )
@@ -61,7 +60,7 @@ def sync_steam(steam_api_key):
                 listGame.append(str(0))
                 listGame.append(str(0))
                 listGame.append(str(0) + "%")
-        except:
+        except Exception as e:
             # print("No Achievement Data")
             listGame.append(str(0))
             listGame.append(str(0))

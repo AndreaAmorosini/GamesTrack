@@ -30,21 +30,21 @@ def init_mongo():
             db.command("ping")  # test connection
             logging.info("Creating Users collection")
             existing = db.list_collection_names()
+            logging.info(f"Existing collections: {existing}")
             if "users" not in existing:
                 db.create_collection("users")
                 db["users"].create_index("email", unique=True)
                 db["users"].create_index("username", unique=True)
             
-            result = db["users"].insert_one(
-                {
-                    "username": "test_user",
-                    "password": "test_password",
-                    "email": "test@example.com",
-                    "metadata_api_key": "test_api_key",  # API key for metadata service
-                }
-            )
+                result = db["users"].insert_one(
+                    {
+                        "username": "test_user",
+                        "password": "test_password",
+                        "email": "test@example.com",
+                    }
+                )
             
-            user_id = str(result.inserted_id)
+                user_id = str(result.inserted_id)
             
             #Check which info on genres, platforms, publishers and developers can be retrieved from igdb
             logging.info("Creating Platforms")

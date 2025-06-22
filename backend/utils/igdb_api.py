@@ -59,8 +59,9 @@ class IGDBAutoAuthClient:
             where uid="{external_id}" & category = (1,36);
             '''       
             external_game_result = self.query("external_games", external_game_query)
+            external_game_result = json.loads(external_game_result)
             
-            game_id = external_game_result[0].get("game", None) if external_game_result else None
+            game_id = external_game_result[0].get("game", None).get("id", None) if external_game_result else None
         else:
             game_id = None
         
