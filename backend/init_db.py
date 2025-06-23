@@ -146,11 +146,10 @@ def init_mongo():
 
             if "games" not in existing:
                 db.create_collection("games")
-                db["games"].create_index("game_ID", unique=True)
+                db["games"].create_index("igbd_id", unique=True)
                 
                 db["games"].insert_one(
                     {
-                        "game_ID": "test_game_ID",
                         "igdb_id": "test_gameDB_ID",
                         "psn_game_ID": "test_psn_game_ID",
                         "xbox_game_ID": "test_xbox_game_ID",

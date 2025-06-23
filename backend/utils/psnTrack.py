@@ -6,9 +6,14 @@ import os
 from psnawp_api.models import SearchDomain
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import time
+import logging
+import sys
+
+logger = logging.getLogger(__name__)
 
 
 def sync_psn(npsso):
+    logger.info("Starting PSN synchronization...")
     # Create a PSNAWP object
     psn = PSNAWP(npsso)
 
@@ -56,7 +61,9 @@ def sync_psn(npsso):
 
     gameCount = 0
     totPlayTimeCount = 0
+    logger.info("Recupero Dati Giochi: ")
     for t in client.title_stats():
+        logger.info("GAME: Title ID: " + str(t.title_id) + " / Name: " + str(t.name))
         ids = get_np_communication_id_with_timeout(t.title_id)
         np_communication_id = ids["np_communication_id"]
         product_id = ids["product_id"]
@@ -75,7 +82,7 @@ def sync_psn(npsso):
         if np_communication_id is not None:
             listOfListGames.append(listGame)
             gameCount += 1
-            totPlayTimeCount += t.play_duration
+            totPlayTimeCount += int(t.play_duration.total_seconds())
             time.sleep(1.5)
 
     np_communication_id_list = [
@@ -85,12 +92,21 @@ def sync_psn(npsso):
     earnedTrophyCount = 0
     totTrophyCount = 0
     completeTrophyCount = 0
-    for tr in tqdm(client.trophy_titles()):
+    logger.info("Recupero Dati da Trofei: ")
+    for tr in client.trophy_titles():
         if tr.np_communication_id not in np_communication_id_list:
             product_id = get_product_id_by_title(tr.title_name)
             time.sleep(1.5)
         else:
             product_id = next((game[9] for game in listOfListGames if game[8] == tr.np_communication_id), None)
+        logger.info(
+            "TROPHY: Title ID: "
+            + str(tr.np_communication_id)
+            + " / Name: "
+            + str(tr.title_name)
+            + " / Product ID: "
+            + str(product_id)
+        )
         listGame = [
             tr.np_communication_id,
             tr.title_name,
@@ -156,7 +172,7 @@ def sync_psn(npsso):
     # Si fa il merge in maniera right per includere anche i giochi PS3 da riempirne i dati poi tramite metadata
 
     df_merged = pd.merge(df_games_psn, df_trophy_psn, on="np_communication_id", how="right")
-    df_merged
+    df_merged = df_merged.where(pd.notnull(df_merged), None)
 
 
     print(

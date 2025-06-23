@@ -16,6 +16,8 @@ from utils.db import get_db
 from utils.user_utils import router as user_utils_router
 from utils.user_utils import get_password_hash, verify_password, get_current_active_user
 import logging
+import time
+import math
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 os.environ["PYTHONUNBUFFERED"] = "1"  # Disable output buffering for real-time logs
@@ -277,6 +279,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
     stats = sync_psn(api_key) if platform == "psn" else sync_steam(api_key)
     full_games_dict = stats["fullGames"]
     #Insert all the games in database and update from metadata
+    #TODO: da rivedere e forse meglio fare il check sugli external id piuttosto che sul nome
     existing_game_names = set(g["name"] for g in db["games"].find({}, {"name": 1}))
     games_to_insert = []
     game_user_to_insert = []
@@ -290,17 +293,24 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         if platform == "steam":
             external_id = game.get("title_id", None)
         elif platform == "psn":
-            external_id = game.get("product_id", None)
+            if game.get("product_id_x") is not None:
+                external_id = game.get("product_id_x", None)
+            elif game.get("product_id_y") is not None:
+                external_id = game.get("product_id_y", None)
+            else:
+                external_id = None
             
         if game_name not in existing_game_names:
             #Retrieve metadata for the game
-            metadata = igdb_client.get_game_metadata(game["name"] if game["name"] is not None else game["title_name"], external_id=external_id)
-
-            #TODO: Da rivedere assegnazione dei campi
+            metadata = igdb_client.get_game_metadata(game_name, external_id=external_id)
+            #Skip if no metadata found
+            if metadata is None:
+                logging.warning(f"No metadata found for game: {game_name} with external ID: {external_id}")
+                continue
             games_to_insert.append(
                 {
-                    "name": metadata.get("name", game["name"] if game["name"] is not None else game["title_name"]),
-                    "gameDB_ID": metadata.get("igdb_id"),
+                    "name": metadata.get("name", game_name),
+                    "igbd_id": metadata.get("igdb_id"),
                     "psn_game_ID": metadata.get("psn_id"),
                     "steam_game_ID": metadata.get("steam_id"),
                     "platforms": metadata.get("platforms", []),
@@ -318,6 +328,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
             )
             name_to_gameuser_indexes[game_name] = len(game_user_to_insert)
             game_id = None
+            existing_game_names.add(game_name)  # Add to existing names to avoid duplicates
         else:
             existing_game = db["games"].find_one({"name": game_name})
             game_id = existing_game["_id"] if existing_game else None
@@ -331,6 +342,8 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 "play_count": game.get("play_duration"),
             },
         )
+        
+        time.sleep(0.5)  # To avoid hitting API rate limits too quickly
         
     if games_to_insert:
         result = db["games"].insert_many(games_to_insert)

@@ -3,6 +3,9 @@ import requests
 from igdb.wrapper import IGDBWrapper
 import json
 import pycountry
+import logging
+
+logger = logging.getLogger(__name__)
 
 def country_name_from_numeric_code(numeric_code):
     # Convert to zero-padded 3-digit string, as per ISO 3166-1 standard
@@ -48,6 +51,7 @@ class IGDBAutoAuthClient:
         return self.query("games", query)
     
     def get_game_metadata(self, game_name: str, external_id: str = None):
+        logger.info(f"Fetching metadata for game: {game_name} with external ID: {external_id}")
         if external_id is not None:
             external_game_query = f'''
             fields
@@ -61,7 +65,9 @@ class IGDBAutoAuthClient:
             external_game_result = self.query("external_games", external_game_query)
             external_game_result = json.loads(external_game_result)
             
-            game_id = external_game_result[0].get("game", None).get("id", None) if external_game_result else None
+            logger.info(f"External Game Result: {external_game_result}")
+            
+            game_id = external_game_result[0].get("game", None) if external_game_result else None
         else:
             game_id = None
         
@@ -103,37 +109,45 @@ class IGDBAutoAuthClient:
         '''
 
         if game_id:
-            query.append(f'where id = {game_id};')
+            query += f'where id = {game_id};'
         else:
-            query.append(f'''
+            query += f'''
             where name ~ *"{game_name}"* & category = 0;
             limit 1;
-            ''')
-            
+            '''
         result = self.query_games(query)
+        logger.info(result)
+        if result is None or result == "[]":
+            logger.info(f"No game found for name: {game_name} with external ID: {external_id}")
+            return None
         result = json.loads(result)
         
-        if "artworks" in result[0]:
-            result[0]["artworks"] = [artwork["url"] for artwork in result[0]["artworks"]]
+        try:
+            if "artworks" in result[0]:
+                result[0]["artworks"] = [artwork["url"] for artwork in result[0]["artworks"]]
+                
+            if "game_modes" in result[0]:
+                result[0]["game_modes"] = [mode["name"] for mode in result[0]["game_modes"]]
+                
+            if "genres" in result[0]:
+                result[0]["genres"] = [genre["name"] for genre in result[0]["genres"]]
             
-        if "game_modes" in result[0]:
-            result[0]["game_modes"] = [mode["name"] for mode in result[0]["game_modes"]]
-            
-        if "genres" in result[0]:
-            result[0]["genres"] = [genre["name"] for genre in result[0]["genres"]]
-        
-        if "involved_companies" in result[0]:
-            result[0]["developer"] = next(
-                (company["company"]["name"] for company in result[0]["involved_companies"] if company.get("developer")), "")
-            result[0]["publisher"] = next(
-                (company["company"]["name"] for company in result[0]["involved_companies"] if company.get("publisher")), "")
-            
-        if "platforms" in result[0]:
-            result[0]["platforms"] = [platform["name"] for platform in result[0]["platforms"]]
-            
-        if "screenshots" in result[0]:
-            result[0]["screenshots"] = [screenshot["url"] for screenshot in result[0]["screenshots"]]
-
+            if "involved_companies" in result[0]:
+                result[0]["developer"] = next(
+                    (company["company"]["name"] for company in result[0]["involved_companies"] if company.get("developer")), "")
+                result[0]["publisher"] = next(
+                    (company["company"]["name"] for company in result[0]["involved_companies"] if company.get("publisher")), "")
+                
+            if "platforms" in result[0]:
+                result[0]["platforms"] = [platform["name"] for platform in result[0]["platforms"]]
+                
+            if "screenshots" in result[0]:
+                result[0]["screenshots"] = [screenshot["url"] for screenshot in result[0]["screenshots"]]
+                
+        except IndexError as e:
+            logger.error(f"IndexError: {e} - Result: {result}")
+            return None
+          
         
         game_metadata = {
             "igdb_id": result[0].get("id"),
@@ -141,7 +155,7 @@ class IGDBAutoAuthClient:
             "platforms": result[0].get("platforms", []),
             "genres": result[0].get("genres", []),
             "game_modes": result[0].get("game_modes", []),
-            "release_date": result[0].get("release_dates", [])[0].get("human", "N/A"),
+            "release_date": result[0].get("first_release_date", ""),
             "publisher": result[0].get("publisher", ""),
             "developer": result[0].get("developer", ""),
             "description": result[0].get("summary", ""),

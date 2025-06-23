@@ -4,14 +4,18 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import os
+import logging
+import sys
+import time
 
+logger = logging.getLogger(__name__)
 
 def sync_steam(steam_api_key):
     steam = Steam(steam_api_key)
 
     user = steam.users.get_user_details("76561198074617013")
 
-    print(
+    logger.info(
         "STEAMID: "
         + str(user["player"]["steamid"])
         + " NAME : "
@@ -28,9 +32,9 @@ def sync_steam(steam_api_key):
 
     # GAMES
     games = steam.users.get_owned_games(steamId)
-    print("Game Count : " + str(games.get("game_count")))
-    print("Recupero Dati : ")
-    for i in tqdm(games.get("games")):
+    logger.info("Game Count : " + str(games.get("game_count")))
+    logger.info("Recupero Dati : ")
+    for i in tqdm(games.get("games"), file=sys.stdout, ncols=80, ascii=True, dynamic_ncols=False, leave=True):
         listGame = [i.get("appid"), i.get("name"), i.get("playtime_forever")]
         totPlayTimeCount += i.get("playtime_forever")
         # print("appId: " + str(i.get("appid")) + " / Name: " + str(i.get("name")) + " / Playtime: " + str(i.get("playtime_forever")))
@@ -66,6 +70,7 @@ def sync_steam(steam_api_key):
             listGame.append(str(0))
             listGame.append(str(0) + "%")
         listOfList.append(listGame)
+        time.sleep(0.5)
 
     # TODO : organizzare dati in dataFrame
 
