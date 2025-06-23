@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, status, Depends
 from pydantic import BaseModel, EmailStr, Field
 from init_db import init_mongo
 import os
-from pymongo import MongoClient, errors
+from pymongo import MongoClient, errors, UpdateOne
 from utils.security import hash_password
 from datetime import datetime
 from bson import ObjectId
@@ -18,6 +18,7 @@ from utils.user_utils import get_password_hash, verify_password, get_current_act
 import logging
 import time
 import math
+
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 os.environ["PYTHONUNBUFFERED"] = "1"  # Disable output buffering for real-time logs
@@ -280,9 +281,11 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
     full_games_dict = stats["fullGames"]
     #Insert all the games in database and update from metadata
     #TODO: da rivedere e forse meglio fare il check sugli external id piuttosto che sul nome
-    existing_game_names = set(g["name"] for g in db["games"].find({}, {"name": 1}))
+    existing_game_names = set(g["name"].lower() for g in db["games"].find({}, {"name": 1}))
     games_to_insert = []
     game_user_to_insert = []
+    existing_game_user_to_insert = []
+    game_user_to_update = []
     name_to_gameuser_indexes = {}
     
     for game in full_games_dict:
@@ -326,35 +329,100 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                     "total_rating_count": metadata.get("total_rating_count", 0),
                 }
             )
-            name_to_gameuser_indexes[game_name] = len(game_user_to_insert)
+            name_to_gameuser_indexes[game_name.lower()] = len(game_user_to_insert)
             game_id = None
             existing_game_names.add(game_name)  # Add to existing names to avoid duplicates
         else:
             existing_game = db["games"].find_one({"name": game_name})
             game_id = existing_game["_id"] if existing_game else None
         
-        game_user_to_insert.append(
-            {
-                "game_ID": game_id,
-                "user_id": str(current_user.id),
-                "platform": platform,
-                "num_trophies": game.get("earnedTrophy"),
-                "play_count": game.get("play_duration"),
-            },
-        )
+        if game_id is not None:
+            exist = db["games_users"].find_one(
+                {
+                    "game_ID": game_id,
+                    "user_id": str(current_user.id),
+                    "platform": platform,
+                }
+            )
+            if not exist:
+                existing_game_user_to_insert.append(
+                    {
+                        "game_ID": game_id,
+                        "user_id": str(current_user.id),
+                        "platform": platform,
+                        "num_trophies": game.get("earnedTrophy"),
+                        "play_count": game.get("play_duration"),
+                    },
+                )
+            else:
+                game_user_to_update.append(
+                    {
+                        "game_ID": game_id,
+                        "user_id": str(current_user.id),
+                        "platform": platform,
+                        "num_trophies": game.get("earnedTrophy"),
+                        "play_count": game.get("play_duration"),
+                    },
+                )
+        else:
+            game_user_to_insert.append(
+                {
+                    "game_ID": game_id,
+                    "user_id": str(current_user.id),
+                    "platform": platform,
+                    "num_trophies": game.get("earnedTrophy"),
+                    "play_count": game.get("play_duration"),
+                },
+            )
         
         time.sleep(0.5)  # To avoid hitting API rate limits too quickly
         
     if games_to_insert:
+        unique_games = []
+        seen_igdb_ids = set(g["igbd_id"] for g in db["games"].find({}, {"igbd_id": 1}) if g.get("igbd_id") is not None)
+        
+        for game in games_to_insert:
+            if game.get("igbd_id") is not None and game["igbd_id"] not in seen_igdb_ids:
+                unique_games.append(game)
+                seen_igdb_ids.add(game["igbd_id"])
+        
+        games_to_insert = unique_games
+        
         result = db["games"].insert_many(games_to_insert)
         logging.info(f"Inserted {len(result.inserted_ids)} new games into the database.")
         inserted_ids = result.inserted_ids
         for game_doc, game_id in zip(games_to_insert, inserted_ids):
-            idx = name_to_gameuser_indexes[game_doc["name"]]
+            idx = name_to_gameuser_indexes[game_doc["name"].lower()]
             game_user_to_insert[idx]["game_ID"] = game_id
             
         db["games_users"].insert_many(game_user_to_insert)
         logging.info(f"Inserted {len(game_user_to_insert)} games-user linkages into the database.")
+        
+    if existing_game_user_to_insert:
+        db["game_users"].insert_many(existing_game_user_to_insert)
+        logging.info(f"Inserted {len(existing_game_user_to_insert)} existing games-user linkages into the database.")
+        
+    if game_user_to_update:
+        bulk_updates = []
+        for game_user in game_user_to_update:
+            bulk_updates.append(
+                UpdateOne(
+                    {
+                        "game_ID": game_user["game_ID"],
+                        "user_id": game_user["user_id"],
+                        "platform": game_user["platform"],
+                    },
+                    {
+                        "$set": {
+                            "num_trophies": game_user["num_trophies"],
+                            "play_count": game_user["play_count"],
+                        }
+                    },
+                )
+            )
+        db["games_users"].bulk_write(bulk_updates)
+        logging.info(f"Updated {len(game_user_to_update)} games-user linkages in the database.")
+        
         
 
     # Optionally update linkage summary fields

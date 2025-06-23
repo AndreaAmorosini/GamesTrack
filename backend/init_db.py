@@ -45,6 +45,9 @@ def init_mongo():
                 )
             
                 user_id = str(result.inserted_id)
+            else:
+                users_remote = db["users"]
+                user_id = users_remote.find_one({"username": "test_user"})["_id"]
             
             #Check which info on genres, platforms, publishers and developers can be retrieved from igdb
             logging.info("Creating Platforms")
@@ -70,6 +73,9 @@ def init_mongo():
                 )
             
                 platIdTest = resultPlat.inserted_ids  # Store the inserted IDs if needed
+            else:
+                platforms_remote = db["platforms"]
+                platIdTest = platforms_remote.find_one()["_id"]
             
             
             if "console_platforms" not in existing:
@@ -80,6 +86,13 @@ def init_mongo():
                 logging.info(f"Found {len(console_platforms_remote)} console platforms from IGDB")
                 resultConsole = db.console_platforms.insert_many(console_platforms_remote)
                 consolePlatIdTest = resultConsole.inserted_ids  # Store the inserted IDs if needed
+            else:
+                console_plat_remote = db["console_platforms"]
+                if console_plat_remote.count_documents({}) == 0:
+                    console_platforms_remote = igdb_client.get_all_game_platforms()
+                    logging.info(f"Found {len(console_platforms_remote)} console platforms from IGDB")
+                    resultConsole = db.console_platforms.insert_many(console_platforms_remote)
+                    consolePlatIdTest = resultConsole.inserted_ids
             
             
             if "genres" not in existing:
@@ -90,6 +103,13 @@ def init_mongo():
                 logging.info(f"Found {len(genres_remote)} genres from IGDB")
                 resultGenres = db.genres.insert_many(genres_remote)
                 genresIdTest = resultGenres.inserted_ids  # Store the inserted IDs if needed
+            else:
+                genres_remote = db["genres"]
+                if genres_remote.count_documents({}) == 0:
+                    genres_remote = igdb_client.get_all_game_genres()
+                    logging.info(f"Found {len(genres_remote)} genres from IGDB")
+                    resultGenres = db.genres.insert_many(genres_remote)
+                    genresIdTest = resultGenres.inserted_ids
                 
                 
             if "companies" not in existing:
@@ -99,7 +119,14 @@ def init_mongo():
                 companies_remote = igdb_client.get_all_game_companies()
                 logging.info(f"Found {len(companies_remote)} companies from IGDB")
                 resultPub = db.companies.insert_many(companies_remote)
-                compIdTest = resultPub.inserted_ids  # Store the inserted IDs if needed       
+                compIdTest = resultPub.inserted_ids  # Store the inserted IDs if needed
+            else:
+                companies_remote = db["companies"]
+                if companies_remote.count_documents({}) == 0:
+                    companies_remote = igdb_client.get_all_game_companies()
+                    logging.info(f"Found {len(companies_remote)} companies from IGDB")
+                    resultPub = db.companies.insert_many(companies_remote)
+                    compIdTest = resultPub.inserted_ids       
             
             
             if "game_modes" not in existing:
@@ -109,7 +136,14 @@ def init_mongo():
                 game_modes_remote = igdb_client.get_all_game_modes()
                 logging.info(f"Found {len(game_modes_remote)} game modes from IGDB")
                 resultModes = db.game_modes.insert_many(game_modes_remote)
-                gameModesId = resultModes.inserted_ids  # Store the inserted IDs if needed    
+                gameModesId = resultModes.inserted_ids  # Store the inserted IDs if needed
+            else:
+                game_modes_remote = db["game_modes"]
+                if game_modes_remote.count_documents({}) == 0:
+                    game_modes_remote = igdb_client.get_all_game_modes()
+                    logging.info(f"Found {len(game_modes_remote)} game modes from IGDB")
+                    resultModes = db.game_modes.insert_many(game_modes_remote)
+                    gameModesId = resultModes.inserted_ids    
             
               
             
