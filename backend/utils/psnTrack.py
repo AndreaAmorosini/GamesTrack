@@ -41,23 +41,8 @@ def sync_psn(npsso):
             except TimeoutError:
                 return {"np_communication_id": None, "product_id": None}
 
-
-    def get_product_id_by_title(title_name):
-        try:
-            search = psn.search(
-                search_query=title_name, search_domain=SearchDomain.FULL_GAMES
-            )
-            for i in search:
-                product_id = i.get("id", None)
-                break
-            return product_id if product_id else None
-        except Exception as e:
-            # print(f"Error retrieving product_id for game title {title_name}: {e}")
-            return None
-
     listOfListGames = []
     listOfListTrophy = []
-
 
     gameCount = 0
     totPlayTimeCount = 0
@@ -94,11 +79,7 @@ def sync_psn(npsso):
     completeTrophyCount = 0
     logger.info("Recupero Dati da Trofei: ")
     for tr in client.trophy_titles():
-        if tr.np_communication_id not in np_communication_id_list:
-            product_id = get_product_id_by_title(tr.title_name)
-            time.sleep(1.5)
-        else:
-            product_id = next((game[9] for game in listOfListGames if game[8] == tr.np_communication_id), None)
+        product_id = next((game[9] for game in listOfListGames if game[8] == tr.np_communication_id), None)
         logger.info(
             "TROPHY: Title ID: "
             + str(tr.np_communication_id)
@@ -149,7 +130,6 @@ def sync_psn(npsso):
             "totTrophy",
             "earnedTrophy",
             "percTrophy",
-            "product_id",
         ],
     )
     df_games_psn = pd.DataFrame(

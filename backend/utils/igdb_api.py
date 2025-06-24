@@ -127,19 +127,19 @@ class IGDBAutoAuthClient:
                 result[0]["artworks"] = [artwork["url"] for artwork in result[0]["artworks"]]
                 
             if "game_modes" in result[0]:
-                result[0]["game_modes"] = [mode["name"] for mode in result[0]["game_modes"]]
+                result[0]["game_modes"] = [mode["id"] for mode in result[0]["game_modes"]]
                 
             if "genres" in result[0]:
-                result[0]["genres"] = [genre["name"] for genre in result[0]["genres"]]
+                result[0]["genres"] = [genre["id"] for genre in result[0]["genres"]]
             
             if "involved_companies" in result[0]:
                 result[0]["developer"] = next(
-                    (company["company"]["name"] for company in result[0]["involved_companies"] if company.get("developer")), "")
+                    (company["company"]["id"] for company in result[0]["involved_companies"] if company.get("developer")), "")
                 result[0]["publisher"] = next(
-                    (company["company"]["name"] for company in result[0]["involved_companies"] if company.get("publisher")), "")
+                    (company["company"]["id"] for company in result[0]["involved_companies"] if company.get("publisher")), "")
                 
             if "platforms" in result[0]:
-                result[0]["platforms"] = [platform["name"] for platform in result[0]["platforms"]]
+                result[0]["platforms"] = [platform["id"] for platform in result[0]["platforms"]]
                 
             if "screenshots" in result[0]:
                 result[0]["screenshots"] = [screenshot["url"] for screenshot in result[0]["screenshots"]]
