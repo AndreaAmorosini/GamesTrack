@@ -180,7 +180,11 @@ def init_mongo():
 
             if "games" not in existing:
                 db.create_collection("games")
-                db["games"].create_index("igbd_id", unique=True)
+                db["games"].create_index(
+                    [("igdb_id", 1)],
+                    unique=True,
+                    partialFilterExpression={"igdb_id": {"$exists": True}},
+                )
                 
                 db["games"].insert_one(
                     {
@@ -203,6 +207,8 @@ def init_mongo():
                         ],
                         "total_rating": 90.8,
                         "total_rating_count": 1000,
+                        "original_name": "Test Game Original Name",
+                        "toVerify" : False,  # Indicates if the game needs verification
                     }
                 )
 

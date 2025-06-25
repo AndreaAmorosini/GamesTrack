@@ -296,39 +296,47 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
     
     for game in full_games_dict:
         game_name = game["name"] if game["name"] is not None else game["title_name"]
+        #Check if game name contains special characters like the trademark symbol
+        if "™" in game_name or "®" in game_name:
+            game_name = game_name.replace("™", "").replace("®", "").strip()
         external_id = None
         if platform == "steam":
             external_id = game.get("title_id", None)
         elif platform == "psn":
             external_id = game.get("product_id", None)
             
-        if game_name.lower() not in existing_game_names and (external_id is not None and external_id not in existing_external_ids):
+        if game_name.lower() not in existing_game_names and ((external_id is not None and external_id not in existing_external_ids) or external_id is None):
             #Retrieve metadata for the game
             metadata = igdb_client.get_game_metadata(game_name, external_id=external_id)
             #Skip if no metadata found
             if metadata is None:
                 logging.warning(f"No metadata found for game: {game_name} with external ID: {external_id}")
-                continue
             #TODO: recuperare dai metadata gli id per generi, developer, publishers, platforms e game_modes e prendere l'id da MongoDB
-            games_to_insert.append(
-                {
-                    "name": metadata.get("name", game_name),
-                    "igbd_id": metadata.get("igdb_id"),
-                    "psn_game_ID": external_id if platform == "psn" else None,
-                    "steam_game_ID": external_id if platform == "steam" else None,
-                    "platforms": metadata.get("platforms", []),
-                    "genres": metadata.get("genres", []),
-                    "game_modes": metadata.get("game_modes", []),
-                    "release_date": metadata.get("release_date"),
-                    "publisher": metadata.get("publisher"),
-                    "developer": metadata.get("developer"),
-                    "description": metadata.get("description"),
-                    "cover_image": metadata.get("cover_image"),
-                    "screenshots": metadata.get("screenshots", []),
-                    "total_rating": metadata.get("total_rating", 0.0),
-                    "total_rating_count": metadata.get("total_rating_count", 0),
-                }
-            )
+            game_doc = {
+                "name": metadata.get("name", game_name) if metadata is not None else game_name,
+                #"igdb_id": metadata.get("igdb_id") if metadata is not None else None,
+                "psn_game_ID": external_id if platform == "psn" else None,
+                "steam_game_ID": external_id if platform == "steam" else None,
+                "platforms": metadata.get("platforms", []) if metadata is not None else [],
+                "genres": metadata.get("genres", []) if metadata is not None else [],
+                "game_modes": metadata.get("game_modes", []) if metadata is not None else [],
+                "release_date": metadata.get("release_date") if metadata is not None else None,
+                "publisher": metadata.get("publisher") if metadata is not None else None,
+                "developer": metadata.get("developer") if metadata is not None else None,
+                "description": metadata.get("description") if metadata is not None else None,
+                "cover_image": metadata.get("cover_image") if metadata is not None else None,
+                "screenshots": metadata.get("screenshots", []) if metadata is not None else [],
+                "total_rating": metadata.get("total_rating", 0.0) if metadata is not None else 0.0,
+                "total_rating_count": metadata.get("total_rating_count", 0) if metadata is not None else 0,
+                "original_game_name": game_name,
+                "toVerify": True if (external_id is None or (metadata.get("name", "").lower() != game_name.lower())) else False,
+            }
+            
+            igdb_id = metadata.get("igdb_id") if metadata is not None else None
+            if igdb_id is not None:
+                game_doc["igbd_id"] = igdb_id
+            
+            games_to_insert.append(game_doc)
             game_id = None
             existing_game_names.add(game_name.lower())  # Add to existing names to avoid duplicates
         else:
@@ -408,7 +416,12 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
             logging.info(f"games_to_insert: {game_user_to_insert}")
             for game_doc, game_id in zip(games_to_insert, inserted_ids):
                 key = (game_doc["name"].lower(), game_doc.get("psn_game_ID") or game_doc.get("steam_game_ID"))
-                idx = name_to_gameuser_indexes[key]
+                # Find the index using either name or external_id (not necessarily both)
+                idx = None
+                for k, v in name_to_gameuser_indexes.items():
+                    if key[0] == k[0] or (key[1] is not None and key[1] == k[1]):
+                        idx = v
+                        break
                 game_user_to_insert[idx]["game_ID"] = game_id
             
         db["game_users"].insert_many(game_user_to_insert)
@@ -431,7 +444,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                     {
                         "$set": {
                             "num_trophies": game_user["num_trophies"],
-                            "play_count": game.get("play_count", 0),
+                            "play_count": game_user["play_count"],
                         }
                     },
                 )
@@ -439,21 +452,22 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         db["game_users"].bulk_write(bulk_updates)
         logging.info(f"Updated {len(game_user_to_update)} games-user linkages in the database.")
         
-        
-
     # Optionally update linkage summary fields
-    db["platform-users"].update_one(
-        {"user_id": str(current_user.id), "platform": platform},
-        {
-            "$set": {
-                "game_count": stats.get("gameCount", 0),
-                "earned_achievements": stats.get("earnedTrophyCount", 0),
-                "play_count": stats.get("totPlayTimeCount", 0),
-                "full_trophies_count": stats.get("completeTrophyCount", 0),
-            }
-        },
-    )
-    
+    try:
+        db["platforms-users"].update_one(
+            {"user_id": str(current_user.id), "platform": platform},
+            {
+                "$set": {
+                    "game_count": stats.get("gameCount", 0),
+                    "earned_achievements": stats.get("earnedTrophyCount", 0),
+                    "play_count": stats.get("totPlayTimeCount", 0),
+                    "full_trophies_count": stats.get("completeTrophyCount", 0),
+                }
+            },
+        )
+    except errors.PyMongoError as e:
+        logging.error(f"Error updating platform summary for {platform}: {e}")
+        
     return {"detail": f"${platform} data synchronized"}
 
 #TODO: sync metadata

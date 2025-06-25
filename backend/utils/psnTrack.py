@@ -85,8 +85,6 @@ def sync_psn(npsso):
             + str(tr.np_communication_id)
             + " / Name: "
             + str(tr.title_name)
-            + " / Product ID: "
-            + str(product_id)
         )
         listGame = [
             tr.np_communication_id,
@@ -104,7 +102,6 @@ def sync_psn(npsso):
                 + tr.earned_trophies.platinum
             ),
             (str(tr.progress) + "%"),
-            product_id
         ]
         listOfListTrophy.append(listGame)
         earnedTrophyCount += (
