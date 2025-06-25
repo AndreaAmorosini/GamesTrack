@@ -1,6 +1,7 @@
 from typing import Union, Annotated
 import sys
 from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi.middleware.cors import CORSMiddleware  # Luigi   (per il frontend)
 from pydantic import BaseModel, EmailStr, Field
 from init_db import init_mongo
 import os
@@ -35,8 +36,8 @@ class Response(BaseModel):
 # Pydantic model for registration input
 class User(BaseModel):
     email: EmailStr
-    username: str = Field(min_length=3, max_length=50)
-    password: str = Field(min_length=8)
+    username: str = Field(None, min_length=3, max_length=50)    # Luigi   (per il frontend)
+    password: str = Field(None, min_length=8)                   # Luigi   (per il frontend)  
     steam: str | None = None
     steam_api_key: str | None = None
     psn: str | None = None
@@ -50,6 +51,17 @@ class Request(BaseModel):
     game_search_term: str | None = None
 
 app = FastAPI()
+
+# Luigi   (per il frontend)
+# Configurazione CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(user_utils_router, prefix="/users", tags=["users"])
 
 test_env = os.getenv("MONGO_INIT_USER"), os.getenv("MONGO_INIT_PASS")

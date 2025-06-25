@@ -31,6 +31,12 @@ class User(BaseModel):
     username: str
     email: str | None = None
     password: str | None = None
+    # piattaforme                         Luigi 
+    steam: str | None = None
+    steam_api_key: str | None = None
+    psn: str | None = None
+    psn_api_key: str | None = None
+    metadata_api_key: str | None = None
 
 
 class UserInDB(User):
@@ -54,7 +60,19 @@ def get_password_hash(password):
 def get_user(db, username: str):
     user_doc = db.users.find_one({"username": username})
     if user_doc:
-        user_doc["id"] = str(user_doc["_id"])  # Convert ObjectId to string
+        # Recupera le informazioni delle piattaforme                  Luigi
+        steam_platform = db["platforms-users"].find_one({"user_id": str(user_doc["_id"]), "platform": "steam"})
+        psn_platform = db["platforms-users"].find_one({"user_id": str(user_doc["_id"]), "platform": "psn"})
+        
+        # Aggiungi le informazioni al documento utente
+        user_doc["id"] = str(user_doc["_id"])
+        if steam_platform:
+            user_doc["steam"] = steam_platform.get("platform_ID")
+            user_doc["steam_api_key"] = steam_platform.get("api_key")
+        if psn_platform:
+            user_doc["psn"] = psn_platform.get("platform_ID")
+            user_doc["psn_api_key"] = psn_platform.get("api_key")
+            
         return UserInDB(**user_doc)
 
 
@@ -122,8 +140,8 @@ async def login_for_access_token(
     )
     return Token(access_token=access_token, token_type="bearer")
 
-
-@router.get("/users/me/", response_model=User)
+# passato da /users/me/ a /me       Luigi
+@router.get("/me/", response_model=User)
 async def read_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):

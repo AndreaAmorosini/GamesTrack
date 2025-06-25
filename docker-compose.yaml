@@ -40,21 +40,28 @@ services:
       MONGO_INIT_PASS: root
       IGDB_CLIENT_ID: CLIENT_ID
       IGDB_CLIENT_SECRET: CLIENT_SECRET
+      # IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}                       # Luigi
+      # IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}               # Luigi
     ports:
       - "8000:8000"
     networks:
       - gametrack
 
+
   frontend:
     build:
       context: ./frontend
     container_name: frontend
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
       - fastapi
     networks:
       - gametrack
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=http://localhost:8000
 
 volumes:
   mongo_data:
