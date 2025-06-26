@@ -20,6 +20,7 @@ import logging
 import time
 from fastapi.responses import JSONResponse
 import re
+import string
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -250,9 +251,18 @@ def update_user(
 
 #TODO: sync data (PSN, Xbox, Steam) da fare asincrono come job in background
 #Forse fare che i metadata del gioco vengono recuperati man mano quando si apre la pagina di dettaglio del gioco
-@app.post("/sync/{platform}")
+@app.post("/sync/{platform}", response_model=dict)
 def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
     """Synchronize data for a user on a specified platform."""
+    
+    def normalize_name(name):
+        if not name:
+            return ""
+        # Remove punctuation
+        name = name.translate(str.maketrans("", "", string.punctuation))
+        # Remove extra spaces and lowercase
+        return " ".join(name.lower().split())
+
     
     if platform not in ["psn", "steam", "xbox"]:
         raise HTTPException(
@@ -304,9 +314,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
     
     games_to_insert = []
     game_user_to_insert = []
-    existing_game_user_to_insert = []
     game_user_to_update = []
-    name_to_gameuser_indexes = {}
     
     for game in full_games_dict:
         game_name = game["name"] if game["name"] is not None else game["title_name"]
@@ -330,9 +338,12 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
             if metadata is None:
                 logging.warning(f"No metadata found for game: {game_name} with external ID: {external_id}")
             #TODO: recuperare dai metadata gli id per generi, developer, publishers, platforms e game_modes e prendere l'id da MongoDB
+            # Normalize names for comparison: remove punctuation, extra spaces, and lowercase
+            normalized_game_name = normalize_name(game_name)
+            normalized_metadata_name = normalize_name(metadata.get("name", "")) if metadata is not None else ""
+
             game_doc = {
                 "name": metadata.get("name", game_name) if metadata is not None else game_name,
-                #"igdb_id": metadata.get("igdb_id") if metadata is not None else None,
                 "psn_game_ID": external_id if platform == "psn" else None,
                 "steam_game_ID": external_id if platform == "steam" else None,
                 "platforms": metadata.get("platforms", []) if metadata is not None else [],
@@ -347,7 +358,8 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 "total_rating": metadata.get("total_rating", 0.0) if metadata is not None else 0.0,
                 "total_rating_count": metadata.get("total_rating_count", 0) if metadata is not None else 0,
                 "original_name": game_name,
-                "toVerify": True if (external_id is None or (metadata.get("name", "").lower() != game_name.lower())) else False,
+                "normalized_name": normalized_metadata_name if normalized_metadata_name != "" else normalized_game_name,
+                "toVerify": True if (external_id is None or (normalized_metadata_name != normalized_game_name)) else False,
             }
             
             igdb_id = metadata.get("igdb_id") if metadata is not None else None
@@ -362,14 +374,14 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 {
                     "$or": [
                         {"name": game_name},
+                        {"original_name": game_name},
+                        {"normalized_name": normalize_name(game_name)},
                         {"psn_game_ID": external_id},
                         {"steam_game_ID": external_id},
                     ]
                 }
             )
             game_id = existing_game["_id"] if existing_game else None
-        
-        if game_id is not None:
             exist = db["game_users"].find_one(
                 {
                     "game_ID": game_id,
@@ -378,7 +390,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 }
             )
             if not exist:
-                existing_game_user_to_insert.append(
+                game_user_to_insert.append(
                     {
                         "game_ID": game_id,
                         "user_id": str(current_user.id),
@@ -397,18 +409,6 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                         "play_count": game.get("play_count", 0),
                     },
                 )
-        else:
-            game_user_to_insert.append(
-                {
-                    "game_ID": game_id,
-                    "user_id": str(current_user.id),
-                    "platform": platform,
-                    "num_trophies": game.get("earnedTrophy"),
-                    "play_count": game.get("play_count", 0),
-                }
-            )
-            name_to_gameuser_indexes[(game_name.lower(), external_id)] = len(game_user_to_insert)
-
         
         time.sleep(0.5)  # To avoid hitting API rate limits too quickly
         
@@ -429,25 +429,45 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         if games_to_insert != []:
             result = db["games"].insert_many(games_to_insert)
             logging.info(f"Inserted {len(result.inserted_ids)} new games into the database.")
-            inserted_ids = result.inserted_ids
-            logging.info(f"name_to_gameuser_indexes: {name_to_gameuser_indexes}")
-            logging.info(f"games_to_insert: {game_user_to_insert}")
-            for game_doc, game_id in zip(games_to_insert, inserted_ids):
-                key = (game_doc["name"].lower(), game_doc.get("psn_game_ID") or game_doc.get("steam_game_ID"), game_doc["original_name"].lower())
-                # Find the index using either name or external_id (not necessarily both)
-                idx = None
-                for k, v in name_to_gameuser_indexes.items():
-                    if key[0] == k[0] or (key[1] is not None and key[1] == k[1]) or (key[2] is not None and key[2] == k[0]):
-                        idx = v
-                        break
-                game_user_to_insert[idx]["game_ID"] = game_id
+
             
+        for game_doc in games_to_insert:            
+            game_id = db["games"].find_one({"normalized_name": game_doc["normalized_name"]})["_id"]
+            exist = db["game_users"].find_one(
+                {
+                    "game_ID": game_id,
+                    "user_id": str(current_user.id),
+                    "platform": platform,
+                }
+            )
+            if not exist:
+                game_user_to_insert.append(
+                    {
+                        "game_ID": game_id,
+                        "user_id": str(current_user.id),
+                        "platform": platform,
+                        "num_trophies": game_doc.get("earnedTrophy"),
+                        "play_count": game_doc.get("play_count", 0),
+                    },
+                )
+            else:
+                game_user_to_update.append(
+                    {
+                        "game_ID": exist["game_ID"],
+                        "user_id": exist["user_id"],
+                        "platform": exist["platform"],
+                        "num_trophies": game_doc.get("earnedTrophy"),
+                        "play_count": game_doc.get("play_count", 0),
+                    },
+                )
+
+        
         db["game_users"].insert_many(game_user_to_insert)
         logging.info(f"Inserted {len(game_user_to_insert)} games-user linkages into the database.")
         
-    if existing_game_user_to_insert:
-        db["game_users"].insert_many(existing_game_user_to_insert)
-        logging.info(f"Inserted {len(existing_game_user_to_insert)} existing games-user linkages into the database.")
+    # if existing_game_user_to_insert:
+    #     db["game_users"].insert_many(existing_game_user_to_insert)
+    #     logging.info(f"Inserted {len(existing_game_user_to_insert)} existing games-user linkages into the database.")
         
     if  game_user_to_update != [] and len(game_user_to_update) > 0:
         bulk_updates = []
@@ -467,8 +487,11 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                     },
                 )
             )
-        db["game_users"].bulk_write(bulk_updates)
-        logging.info(f"Updated {len(game_user_to_update)} games-user linkages in the database.")
+        try:
+            db["game_users"].bulk_write(bulk_updates)
+            logging.info(f"Updated {len(game_user_to_update)} games-user linkages in the database.")
+        except errors as e:
+            logging.error(f"Error updating game-user linkages: {e}")
         
     # Optionally update linkage summary fields
     try:
@@ -483,10 +506,12 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 }
             },
         )
+        logging.info(f"Updated platform summary for {platform} for user {current_user.id}")
     except errors.PyMongoError as e:
         logging.error(f"Error updating platform summary for {platform}: {e}")
         
-    return {"detail": f"${platform} data synchronized"}
+    # return Response(message=f"${platform} data synchronized")
+    return {"message": f"{platform} data synchronized"}
 
 #Per alcuni di questi filtri sarebbe l'ideale avere dei dropdown con i valori possibili e con la possibilita' di selezionarne piu' di uno e con la possibilita' di cercarne nel dropdown
 @app.get("/games", response_model=list[dict])

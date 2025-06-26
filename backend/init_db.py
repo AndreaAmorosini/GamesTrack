@@ -211,17 +211,19 @@ def init_mongo():
                     }
                 )
 
-            if "games_user" not in existing:
-                db.create_collection("games_user")
-                db["games_user"].create_index([("game_ID", ASCENDING), ("user_id", ASCENDING)], unique=True)
+            if "game_user" not in existing:
+                db.create_collection("game_user")
+                db["game_user"].create_index(
+                    [("game_ID", ASCENDING), ("user_id", ASCENDING)], unique=True
+                )
 
-                db["games_user"].insert_one(
+                db["game_user"].insert_one(
                     {
                         "game_ID": "test_game_ID",
                         "user_ID": user_id,
                         "platform": platIdTest[0],  # steam
                         "num_trophies": 3,
-                        "play_count" : 10,
+                        "play_count": 10,
                     }
                 )
 
