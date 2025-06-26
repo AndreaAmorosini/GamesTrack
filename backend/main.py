@@ -1,6 +1,6 @@
 from typing import Union, Annotated
 import sys
-from fastapi import FastAPI, HTTPException, status, Depends
+from fastapi import FastAPI, HTTPException, status, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware  # Luigi   (per il frontend)
 from pydantic import BaseModel, EmailStr, Field
 from init_db import init_mongo
@@ -18,7 +18,8 @@ from utils.user_utils import router as user_utils_router
 from utils.user_utils import get_password_hash, verify_password, get_current_active_user
 import logging
 import time
-import math
+from fastapi.responses import JSONResponse
+import re
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -107,6 +108,7 @@ def register_user(user: User, db=Depends(get_db)):
         result = db.users.insert_one(user_doc)
         user_id = str(result.inserted_id)
         if user.steam_api_key is not None:
+            #Search platform by name
             platform_user_doc = {
                 "platform": "steam",
                 "user_id": user_id,
@@ -205,7 +207,7 @@ def update_user(
         link = db["platforms-users"].find_one({"user_id": str(current_user.id), "platform": "psn"})
         if link:
             db["platforms-users"].update_one(
-                {"user_id": str(current_user.id), "platform": "steam"},
+                {"user_id": str(current_user.id), "platform": "psn"},
                 {
                     "$set": {
                         "platform_ID": update.psn
@@ -246,7 +248,7 @@ def update_user(
         )
     return user_response(updated)
 
-#TODO: sync data (PSN, Xbox, Steam)
+#TODO: sync data (PSN, Xbox, Steam) da fare asincrono come job in background
 #Forse fare che i metadata del gioco vengono recuperati man mano quando si apre la pagina di dettaglio del gioco
 @app.post("/sync/{platform}")
 def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
@@ -311,6 +313,10 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         #Check if game name contains special characters like the trademark symbol
         if "™" in game_name or "®" in game_name:
             game_name = game_name.replace("™", "").replace("®", "").strip()
+        pattern = re.compile(r"tro(f|ph)[a-z]*", re.IGNORECASE)
+        match = pattern.search(game_name)
+        if match:
+            game_name = game_name[:match.start()].strip()
         external_id = None
         if platform == "steam":
             external_id = game.get("title_id", None)
@@ -340,13 +346,13 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 "screenshots": metadata.get("screenshots", []) if metadata is not None else [],
                 "total_rating": metadata.get("total_rating", 0.0) if metadata is not None else 0.0,
                 "total_rating_count": metadata.get("total_rating_count", 0) if metadata is not None else 0,
-                "original_game_name": game_name,
+                "original_name": game_name,
                 "toVerify": True if (external_id is None or (metadata.get("name", "").lower() != game_name.lower())) else False,
             }
             
             igdb_id = metadata.get("igdb_id") if metadata is not None else None
             if igdb_id is not None:
-                game_doc["igbd_id"] = igdb_id
+                game_doc["igdb_id"] = igdb_id
             
             games_to_insert.append(game_doc)
             game_id = None
@@ -408,15 +414,15 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         
     if games_to_insert:
         unique_games = []
-        seen_igdb_ids = set(g["igbd_id"] for g in db["games"].find({}, {"igbd_id": 1}) if g.get("igbd_id") is not None)
+        seen_igdb_ids = set(g["igdb_id"] for g in db["games"].find({}, {"igdb_id": 1}) if g.get("igdb_id") is not None)
         seen_name_extid = set((g["name"].lower(), g.get("psn_game_ID") or g.get("steam_game_ID")) for g in db["games"].find({}, {"name": 1, "psn_game_ID": 1, "steam_game_ID": 1}))
         
         for game in games_to_insert:
             key = (game["name"].lower(), game.get("psn_game_ID") or game.get("steam_game_ID"))
-            if (game.get("igbd_id") is not None and game["igbd_id"] not in seen_igdb_ids) or (game.get("igdb_id") is None and key not in seen_name_extid):
+            if (game.get("igdb_id") is not None and game["igdb_id"] not in seen_igdb_ids) or (game.get("igdb_id") is None and key not in seen_name_extid):
                 unique_games.append(game)
-                if game.get("igbd_id") is not None:
-                    seen_igdb_ids.add(game["igbd_id"])
+                if game.get("igdb_id") is not None:
+                    seen_igdb_ids.add(game["igdb_id"])
                 seen_name_extid.add(key)
         games_to_insert = unique_games
         
@@ -427,11 +433,11 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
             logging.info(f"name_to_gameuser_indexes: {name_to_gameuser_indexes}")
             logging.info(f"games_to_insert: {game_user_to_insert}")
             for game_doc, game_id in zip(games_to_insert, inserted_ids):
-                key = (game_doc["name"].lower(), game_doc.get("psn_game_ID") or game_doc.get("steam_game_ID"))
+                key = (game_doc["name"].lower(), game_doc.get("psn_game_ID") or game_doc.get("steam_game_ID"), game_doc["original_name"].lower())
                 # Find the index using either name or external_id (not necessarily both)
                 idx = None
                 for k, v in name_to_gameuser_indexes.items():
-                    if key[0] == k[0] or (key[1] is not None and key[1] == k[1]):
+                    if key[0] == k[0] or (key[1] is not None and key[1] == k[1]) or (key[2] is not None and key[2] == k[0]):
                         idx = v
                         break
                 game_user_to_insert[idx]["game_ID"] = game_id
@@ -482,8 +488,126 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         
     return {"detail": f"${platform} data synchronized"}
 
+#Per alcuni di questi filtri sarebbe l'ideale avere dei dropdown con i valori possibili e con la possibilita' di selezionarne piu' di uno e con la possibilita' di cercarne nel dropdown
+@app.get("/games", response_model=list[dict])
+def get_all_games(
+    db=Depends(get_db),
+    name: str = Query(None, description="Filter games by name (case-insensitive)"),
+    genres: list[int] = Query(None, description="Filter games by genres (comma-separated)"),
+    platforms: list[int] = Query(None, description="Filter games by console (comma-separated)"),
+    developer: list[int] = Query(None, description="Filter games by developer"),
+    publisher: int = Query(None, description="Filter games by publisher"),
+    game_mode: list[int] = Query(None, description="Filter games by game mode (e.g., Single-player, Multiplayer)"),
+):
+    query = {}
+    
+    if name:
+        query["$or"] = [
+            {"name": {"$regex": name, "$options": "i"}},  # Case-insensitive search
+            {"original_name": {"$regex": name, "$options": "i"}},  # Search in original game name
+        ]
+
+    if genres:
+        query["genres"] = {"$in": genres}
+
+    if platforms:
+        query["platforms"] = {"$in": platforms}
+
+    if developer:
+        query["developer"] = {"$in": developer} if isinstance(developer, list) else developer
+
+    if publisher:
+        query["publisher"] = {"$in": publisher} if isinstance(publisher, list) else publisher
+
+    if game_mode:
+        query["game_modes"] = {"$in": game_mode}
+        
+    logging.info(f"Querying games with filters: {query}")
+        
+    games = list(db["games"].find(query))
+    for game in games:
+        game["_id"] = str(game["_id"])
+        
+    return games
+
+@app.get("/companies", response_model=list[dict])
+def get_all_companies(
+    db=Depends(get_db),
+    name: str = Query(None, description="Filter companies by name (case-insensitive)"),
+    country: str = Query(None, description="Filter companies by country (e.g., USA, Japan)"),
+):
+    query = {}
+    
+    if name:
+        query["company_name"] = {"$regex": name, "$options": "i"}
+    if country:
+        query["country"] = {"$regex": country, "$options": "i"}
+        
+    companies = list(db["companies"].find(query))
+    for company in companies:
+        company["_id"] = str(company["_id"])
+    return companies
+
+@app.get("/genres", response_model=list[dict])
+def get_all_genres(
+    db=Depends(get_db),
+    name: str = Query(None, description="Filter genres by name (case-insensitive)"),
+):
+    query = {}
+
+    if name:
+        query["genre_name"] = {"$regex": name, "$options": "i"}
+
+    genres = list(db["genres"].find(query))
+    for genre in genres:
+        genre["_id"] = str(genre["_id"])
+    return genres
+
+@app.get("/game_modes", response_model=list[dict])
+def get_all_game_modes(
+    db=Depends(get_db),
+    name: str = Query(None, description="Filter game_modes by name (case-insensitive)"),
+):
+    query = {}
+
+    if name:
+        query["game_mode_name"] = {"$regex": name, "$options": "i"}
+
+    game_modes = list(db["game_modes"].find(query))
+    for game_mode in game_modes:
+        game_mode["_id"] = str(game_mode["_id"])
+    return game_modes
+
+
+@app.get("/consoles", response_model=list[dict])
+def get_all_consoles(
+    db=Depends(get_db),
+    name: str = Query(None, description="Filter consoles by name (case-insensitive)"),
+    generation: int = Query(None, description="Filter consoles by generation (e.g., 8, 16, 32, 64, 128)"),
+):
+    query = {}
+
+    if name:
+        query["$or"] = [
+            {"platform_name": {"$regex": name, "$options": "i"}},  # Case-insensitive search
+            {
+                "abbreviation": {"$regex": name, "$options": "i"}
+            },  # Search in original game name
+        ]
+        
+    if generation:
+        query["generation"] = generation
+
+    consoles = list(db["console_platforms"].find(query))
+    for console in consoles:
+        console["_id"] = str(console["_id"])
+    return consoles
+
+
 #TODO: sync metadata
-#TODO: retrieve all games
 #TODO: retrieve game by ID
-#TODO: retrieve games by platform
-#TODO: retrieve games by search term
+#TODO: retrieve games by search term and filters (genere, platform, console,. developer, publisher, game mode)
+#TODO: search game metadata by name
+#TODO: add to wishlist
+#TODO: remove from wishlist
+#TODO: force update game metadata

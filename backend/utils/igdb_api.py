@@ -250,6 +250,9 @@ class IGDBAutoAuthClient:
             if not result:
                 break
             for company in result:
+                if "duplicate" in company["name"].lower():
+                    logger.warning(f"Skipping duplicate company: {company['name']}")
+                    continue 
                 country_name = country_name_from_numeric_code(company.get("country", 0))
                 comp = {
                     "igdb_id": company["id"],

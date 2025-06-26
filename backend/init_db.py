@@ -153,7 +153,7 @@ def init_mongo():
                 
                 db["platforms-users"].insert_one(
                     {
-                        "platform": platIdTest[0], #steam, psn, xbox
+                        "platform": "steam", #steam, psn, xbox
                         "user_id": user_id,
                         "platform_ID": "steam_id",
                         "api_key": "steam_api_key",
@@ -166,7 +166,7 @@ def init_mongo():
                 
                 db["platforms-users"].insert_one(
                     {
-                        "platform": platIdTest[1], #steam, psn, xbox
+                        "platform": "psn", #steam, psn, xbox
                         "user_id": user_id,
                         "platform_ID": "psn_id",
                         "api_key": "psn_api_key",
@@ -188,27 +188,26 @@ def init_mongo():
                 
                 db["games"].insert_one(
                     {
-                        "igdb_id": "test_gameDB_ID",
-                        "psn_game_ID": "test_psn_game_ID",
-                        "xbox_game_ID": "test_xbox_game_ID",
-                        "steam_game_ID": "test_steam_game_ID",
-                        "name": "Test Game",
-                        "platforms": [platIdTest[0], platIdTest[1]],  # List of platform IDs
-                        "genres": [genresIdTest[0], genresIdTest[1]],  # List of genre IDs
-                        "game_modes": [gameModesId[0], gameModesId[1]],  # List of game mode IDs
-                        "release_date": "2023-01-01",
-                        "publisher": compIdTest[0],  # Test Publisher
-                        "developer": compIdTest[1],  # Test Developer
-                        "description": "This is a test game description.",
-                        "cover_image": "https://example.com/test_game_cover.jpg",
+                        "igdb_id": 305152,
+                        "psn_game_ID": 10008503,
+                        "steam_game_ID": None,
+                        "name": "Clair Obscur: Expedition 33",
+                        "platforms": [169, 6],  # List of platform IDs
+                        "genres": [12, 16],  # List of genre IDs
+                        "game_modes": [1, 2],  # List of game mode IDs
+                        "release_date": 1745452800,
+                        "publisher": 37893,  # Test Publisher
+                        "developer": 55283,  # Test Developer
+                        "description": "Lead the members of Expedition 33 on their quest to destroy the Paintress so that she can never paint death again. Explore a world of wonders inspired by Belle Époque France and battle unique enemies in this turn-based RPG with real-time mechanics.",
+                        "cover_image": "//images.igdb.com/igdb/image/upload/t_thumb/co9gam.jpg",
                         "screenshots": [
-                            "https://example.com/test_game_screenshot1.jpg",
-                            "https://example.com/test_game_screenshot2.jpg",
+                            "//images.igdb.com/igdb/image/upload/t_thumb/scsodz.jpg",
+                            "//images.igdb.com/igdb/image/upload/t_thumb/scsoe8.jpg",
                         ],
-                        "total_rating": 90.8,
-                        "total_rating_count": 1000,
-                        "original_name": "Test Game Original Name",
-                        "toVerify" : False,  # Indicates if the game needs verification
+                        "total_rating": 90.33744655818265,
+                        "total_rating_count": 243,
+                        "original_name": "Clair Obscur: Expedition 33",
+                        "toVerify": False,  # Indicates if the game needs verification
                     }
                 )
 
