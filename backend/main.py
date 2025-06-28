@@ -333,11 +333,11 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
             
         if game_name.lower() not in existing_game_names and ((external_id is not None and external_id not in existing_external_ids) or external_id is None):
             #Retrieve metadata for the game
+            logging.info(f"Retrieving metadata for game: {game_name} with external ID: {external_id}")
             metadata = igdb_client.get_game_metadata(game_name, external_id=external_id)
             #Skip if no metadata found
             if metadata is None:
                 logging.warning(f"No metadata found for game: {game_name} with external ID: {external_id}")
-            #TODO: recuperare dai metadata gli id per generi, developer, publishers, platforms e game_modes e prendere l'id da MongoDB
             # Normalize names for comparison: remove punctuation, extra spaces, and lowercase
             normalized_game_name = normalize_name(game_name)
             normalized_metadata_name = normalize_name(metadata.get("name", "")) if metadata is not None else ""
@@ -382,7 +382,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 }
             )
             game_id = existing_game["_id"] if existing_game else None
-            exist = db["game_users"].find_one(
+            exist = db["game_user"].find_one(
                 {
                     "game_ID": game_id,
                     "user_id": str(current_user.id),
@@ -433,7 +433,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
             
         for game_doc in games_to_insert:            
             game_id = db["games"].find_one({"normalized_name": game_doc["normalized_name"]})["_id"]
-            exist = db["game_users"].find_one(
+            exist = db["game_user"].find_one(
                 {
                     "game_ID": game_id,
                     "user_id": str(current_user.id),
@@ -460,15 +460,24 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                         "play_count": game_doc.get("play_count", 0),
                     },
                 )
+                
+        #Check in game_user_to_update and game_user_to_insert if there are num_trophies, play_count or game_ID is None
+        game_user_to_insert = [
+            game_user for game_user in game_user_to_insert
+            if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None
+        ]
+        
+        game_user_to_update = [
+            game_user for game_user in game_user_to_update
+            if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None
+        ]
 
-        
-        db["game_users"].insert_many(game_user_to_insert)
-        logging.info(f"Inserted {len(game_user_to_insert)} games-user linkages into the database.")
-        
-    # if existing_game_user_to_insert:
-    #     db["game_users"].insert_many(existing_game_user_to_insert)
-    #     logging.info(f"Inserted {len(existing_game_user_to_insert)} existing games-user linkages into the database.")
-        
+        try:
+            db["game_user"].insert_many(game_user_to_insert)
+            logging.info(f"Inserted {len(game_user_to_insert)} games-user linkages into the database.")
+        except errors.BulkWriteError as bwe:
+            logging.error(f"Bulk write error: {bwe.details}")
+            
     if  game_user_to_update != [] and len(game_user_to_update) > 0:
         bulk_updates = []
         for game_user in game_user_to_update:
@@ -488,7 +497,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 )
             )
         try:
-            db["game_users"].bulk_write(bulk_updates)
+            db["game_user"].bulk_write(bulk_updates)
             logging.info(f"Updated {len(game_user_to_update)} games-user linkages in the database.")
         except errors as e:
             logging.error(f"Error updating game-user linkages: {e}")

@@ -34,8 +34,16 @@ def sync_steam(steam_api_key):
     games = steam.users.get_owned_games(steamId)
     logger.info("Game Count : " + str(games.get("game_count")))
     logger.info("Recupero Dati : ")
-    for i in tqdm(games.get("games"), file=sys.stdout, ncols=80, ascii=True, dynamic_ncols=False, leave=True):
+    for i in games.get("games"):
         listGame = [i.get("appid"), i.get("name"), i.get("playtime_forever")]
+        logger.info(
+            "appId: "
+            + str(i.get("appid"))
+            + " / Name: "
+            + str(i.get("name"))
+            + " / Playtime: "
+            + str(i.get("playtime_forever"))
+        )
         totPlayTimeCount += i.get("playtime_forever")
         # print("appId: " + str(i.get("appid")) + " / Name: " + str(i.get("name")) + " / Playtime: " + str(i.get("playtime_forever")))
         try:
