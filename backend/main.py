@@ -21,6 +21,8 @@ import time
 from fastapi.responses import JSONResponse
 import re
 import string
+from arq import create_pool
+from arq.connections import RedisSettings
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -251,337 +253,364 @@ def update_user(
 
 #TODO: sync data (PSN, Xbox, Steam) da fare asincrono come job in background
 #Forse fare che i metadata del gioco vengono recuperati man mano quando si apre la pagina di dettaglio del gioco
-@app.post("/sync/{platform}", response_model=dict)
-def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
-    """Synchronize data for a user on a specified platform."""
+# @app.post("/sync/{platform}", response_model=dict)
+# def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
+#     """Synchronize data for a user on a specified platform."""
     
-    current_user_id = current_user.id
-    def normalize_name(name):
-        if not name:
-            return ""
-        # Remove punctuation
-        name = name.translate(str.maketrans("", "", string.punctuation))
-        # Remove extra spaces and lowercase
-        return " ".join(name.lower().split())
+#     current_user_id = current_user.id
+#     def normalize_name(name):
+#         if not name:
+#             return ""
+#         # Remove punctuation
+#         name = name.translate(str.maketrans("", "", string.punctuation))
+#         # Remove extra spaces and lowercase
+#         return " ".join(name.lower().split())
 
     
-    if platform not in ["psn", "steam", "xbox"]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid platform specified. Supported platforms: psn, steam, xbox.",
-        )
+#     if platform not in ["psn", "steam", "xbox"]:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Invalid platform specified. Supported platforms: psn, steam, xbox.",
+#         )
     
-    # Validate user ID
-    try:
-        oid = ObjectId(str(current_user.id))
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID"
-        )
-    # Check if user exists
-    user = db.users.find_one({"_id": oid})
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+#     # Validate user ID
+#     try:
+#         oid = ObjectId(str(current_user.id))
+#     except Exception:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user ID"
+#         )
+#     # Check if user exists
+#     user = db.users.find_one({"_id": oid})
+#     if not user:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+#         )
     
-    # Check platform linkage
-    link = db["platforms-users"].find_one({"user_id": str(current_user.id), "platform": platform})
-    if not link:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No linkage for platform {platform}",
-        )
-    # Retrieve API credentials
-    api_key = link.get("api_key")
+#     # Check platform linkage
+#     link = db["platforms-users"].find_one({"user_id": str(current_user.id), "platform": platform})
+#     if not link:
+#         raise HTTPException(
+#             status_code=status.HTTP_404_NOT_FOUND,
+#             detail=f"No linkage for platform {platform}",
+#         )
+#     # Retrieve API credentials
+#     api_key = link.get("api_key")
     
-    if api_key is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No API key found for platform {platform}",
-        )
+#     if api_key is None:
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail=f"No API key found for platform {platform}",
+#         )
     
-    # Call corresponding sync function
-    stats = sync_psn(api_key) if platform == "psn" else sync_steam(api_key)
-    full_games_dict = stats["fullGames"]
-    #Insert all the games in database and update from metadata
-    #TODO: da rivedere e forse meglio fare il check sugli external id piuttosto che sul nome
-    existing_game_names = set(g["name"].lower() for g in db["games"].find({}, {"name": 1}))
-    existing_external_ids = []
-    if platform == "steam":
-        existing_external_ids = set(g["steam_game_ID"] for g in db["games"].find({}, {"steam_game_ID": 1}) if g.get("steam_game_ID") is not None)
-    elif platform == "psn":
-        existing_external_ids = set(g["psn_game_ID"] for g in db["games"].find({}, {"psn_game_ID": 1}) if g.get("psn_game_ID") is not None)
+#     # Call corresponding sync function
+#     stats = sync_psn(api_key) if platform == "psn" else sync_steam(api_key)
+#     full_games_dict = stats["fullGames"]
+#     #Insert all the games in database and update from metadata
+#     #TODO: da rivedere e forse meglio fare il check sugli external id piuttosto che sul nome
+#     existing_game_names = set(g["name"].lower() for g in db["games"].find({}, {"name": 1}))
+#     existing_external_ids = []
+#     if platform == "steam":
+#         existing_external_ids = set(g["steam_game_ID"] for g in db["games"].find({}, {"steam_game_ID": 1}) if g.get("steam_game_ID") is not None)
+#     elif platform == "psn":
+#         existing_external_ids = set(g["psn_game_ID"] for g in db["games"].find({}, {"psn_game_ID": 1}) if g.get("psn_game_ID") is not None)
     
-    games_to_insert = []
-    games_to_update = []
-    game_user_to_insert = []
-    game_user_to_update = []
+#     games_to_insert = []
+#     games_to_update = []
+#     game_user_to_insert = []
+#     game_user_to_update = []
     
-    for game in full_games_dict:
-        game_name = game["name"] if game["name"] is not None else game["title_name"]
-        #Check if game name contains special characters like the trademark symbol
-        if "™" in game_name or "®" in game_name:
-            game_name = game_name.replace("™", "").replace("®", "").strip()
-        pattern = re.compile(r"tro(f|ph)[a-z]*", re.IGNORECASE)
-        match = pattern.search(game_name)
-        if match:
-            game_name = game_name[:match.start()].strip()
-        external_id = None
-        if platform == "steam":
-            external_id = game.get("title_id", None)
-        elif platform == "psn":
-            external_id = game.get("product_id", None)
+#     for game in full_games_dict:
+#         game_name = game["name"] if game["name"] is not None else game["title_name"]
+#         #Check if game name contains special characters like the trademark symbol
+#         if "™" in game_name or "®" in game_name:
+#             game_name = game_name.replace("™", "").replace("®", "").strip()
+#         pattern = re.compile(r"tro(f|ph)[a-z]*", re.IGNORECASE)
+#         match = pattern.search(game_name)
+#         if match:
+#             game_name = game_name[:match.start()].strip()
+#         external_id = None
+#         if platform == "steam":
+#             external_id = game.get("title_id", None)
+#         elif platform == "psn":
+#             external_id = game.get("product_id", None)
             
-        if game_name.lower() not in existing_game_names and ((external_id is not None and external_id not in existing_external_ids) or external_id is None):
-            if "demo" in game_name.lower() or "beta" in game_name.lower():
-                logging.info(f"Skipping demo/beta game: {game_name}")
-                continue
-            #Retrieve metadata for the game
-            logging.info(f"Retrieving metadata for game: {game_name} with external ID: {external_id}")
-            metadata = igdb_client.get_game_metadata(game_name, external_id=external_id)
-            #Skip if no metadata found
-            if metadata is None:
-                logging.warning(f"No metadata found for game: {game_name} with external ID: {external_id}")
-            # Normalize names for comparison: remove punctuation, extra spaces, and lowercase
-            normalized_game_name = normalize_name(game_name)
-            normalized_metadata_name = normalize_name(metadata.get("name", "")) if metadata is not None else ""
+#         if game_name.lower() not in existing_game_names and ((external_id is not None and external_id not in existing_external_ids) or external_id is None):
+#             if "demo" in game_name.lower() or "beta" in game_name.lower():
+#                 logging.info(f"Skipping demo/beta game: {game_name}")
+#                 continue
+#             #Retrieve metadata for the game
+#             logging.info(f"Retrieving metadata for game: {game_name} with external ID: {external_id}")
+#             metadata = igdb_client.get_game_metadata(game_name, external_id=external_id)
+#             #Skip if no metadata found
+#             if metadata is None:
+#                 logging.warning(f"No metadata found for game: {game_name} with external ID: {external_id}")
+#             # Normalize names for comparison: remove punctuation, extra spaces, and lowercase
+#             normalized_game_name = normalize_name(game_name)
+#             normalized_metadata_name = normalize_name(metadata.get("name", "")) if metadata is not None else ""
 
-            game_doc = {
-                "name": metadata.get("name", game_name) if metadata is not None else game_name,
-                "psn_game_ID": external_id if platform == "psn" else None,
-                "steam_game_ID": external_id if platform == "steam" else None,
-                "platforms": metadata.get("platforms", []) if metadata is not None else [],
-                "genres": metadata.get("genres", []) if metadata is not None else [],
-                "game_modes": metadata.get("game_modes", []) if metadata is not None else [],
-                "release_date": metadata.get("release_date") if metadata is not None else None,
-                "publisher": metadata.get("publisher") if metadata is not None else None,
-                "developer": metadata.get("developer") if metadata is not None else None,
-                "description": metadata.get("description") if metadata is not None else None,
-                "cover_image": metadata.get("cover_image") if metadata is not None else None,
-                "screenshots": metadata.get("screenshots", []) if metadata is not None else [],
-                "total_rating": metadata.get("total_rating", 0.0) if metadata is not None else 0.0,
-                "total_rating_count": metadata.get("total_rating_count", 0) if metadata is not None else 0,
-                "original_name": game_name,
-                "normalized_name": normalized_metadata_name if normalized_metadata_name != "" else normalized_game_name,
-                "toVerify": True if (external_id is None or (normalized_metadata_name != normalized_game_name)) else False,
-            }
+#             game_doc = {
+#                 "name": metadata.get("name", game_name) if metadata is not None else game_name,
+#                 "psn_game_ID": external_id if platform == "psn" else None,
+#                 "steam_game_ID": external_id if platform == "steam" else None,
+#                 "platforms": metadata.get("platforms", []) if metadata is not None else [],
+#                 "genres": metadata.get("genres", []) if metadata is not None else [],
+#                 "game_modes": metadata.get("game_modes", []) if metadata is not None else [],
+#                 "release_date": metadata.get("release_date") if metadata is not None else None,
+#                 "publisher": metadata.get("publisher") if metadata is not None else None,
+#                 "developer": metadata.get("developer") if metadata is not None else None,
+#                 "description": metadata.get("description") if metadata is not None else None,
+#                 "cover_image": metadata.get("cover_image") if metadata is not None else None,
+#                 "screenshots": metadata.get("screenshots", []) if metadata is not None else [],
+#                 "total_rating": metadata.get("total_rating", 0.0) if metadata is not None else 0.0,
+#                 "total_rating_count": metadata.get("total_rating_count", 0) if metadata is not None else 0,
+#                 "original_name": game_name,
+#                 "normalized_name": normalized_metadata_name if normalized_metadata_name != "" else normalized_game_name,
+#                 "toVerify": True if (external_id is None or (normalized_metadata_name != normalized_game_name)) else False,
+#             }
             
-            igdb_id = metadata.get("igdb_id") if metadata is not None else None
-            if igdb_id is not None:
-                game_doc["igdb_id"] = igdb_id
+#             igdb_id = metadata.get("igdb_id") if metadata is not None else None
+#             if igdb_id is not None:
+#                 game_doc["igdb_id"] = igdb_id
             
-            games_to_insert.append(game_doc)
-            game_id = None
-            existing_game_names.add(game_name.lower())  # Add to existing names to avoid duplicates
-        else:
-            existing_game = db["games"].find_one(
-                {
-                    "$or": [
-                        {"name": game_name},
-                        {"original_name": game_name},
-                        {"normalized_name": normalize_name(game_name)},
-                        {"psn_game_ID": external_id},
-                        {"steam_game_ID": external_id},
-                    ]
-                }
-            )
-            if existing_game:
-                logging.info(f"Game already exists in the database: {game_name}")
-                if platform == "steam" and existing_game.get("steam_game_ID") is None:
-                    existing_game["steam_game_ID"] = external_id
-                    games_to_update.append(existing_game)
-                elif platform == "psn" and existing_game.get("psn_game_ID") is None:
-                    existing_game["psn_game_ID"] = external_id
-                    games_to_update.append(existing_game)
-            game_id = existing_game["_id"] if existing_game else None
-            exist = db["game_user"].find_one(
-                {
-                    "game_ID": game_id,
-                    "user_ID": str(current_user_id),
-                    "platform": platform,
-                }
-            )
-            if not exist:
-                game_user_to_insert.append(
-                    {
-                        "game_ID": game_id,
-                        "user_ID": str(current_user_id),
-                        "platform": platform,
-                        "num_trophies": game.get("earnedTrophy", 0),
-                        "play_count": game.get("play_count", 0),
-                    },
-                )
-            else:
-                game_user_to_update.append(
-                    {
-                        "game_ID": exist["game_ID"],
-                        "user_ID": exist["user_ID"],
-                        "platform": exist["platform"],
-                        "num_trophies": game.get("earnedTrophy", 0),
-                        "play_count": game.get("play_count", 0),
-                    },
-                )
+#             games_to_insert.append(game_doc)
+#             game_id = None
+#             existing_game_names.add(game_name.lower())  # Add to existing names to avoid duplicates
+#         else:
+#             existing_game = db["games"].find_one(
+#                 {
+#                     "$or": [
+#                         {"name": game_name},
+#                         {"original_name": game_name},
+#                         {"normalized_name": normalize_name(game_name)},
+#                         {"psn_game_ID": external_id},
+#                         {"steam_game_ID": external_id},
+#                     ]
+#                 }
+#             )
+#             if existing_game:
+#                 logging.info(f"Game already exists in the database: {game_name}")
+#                 if platform == "steam" and existing_game.get("steam_game_ID") is None:
+#                     existing_game["steam_game_ID"] = external_id
+#                     games_to_update.append(existing_game)
+#                 elif platform == "psn" and existing_game.get("psn_game_ID") is None:
+#                     existing_game["psn_game_ID"] = external_id
+#                     games_to_update.append(existing_game)
+#             game_id = existing_game["_id"] if existing_game else None
+#             exist = db["game_user"].find_one(
+#                 {
+#                     "game_ID": game_id,
+#                     "user_ID": str(current_user_id),
+#                     "platform": platform,
+#                 }
+#             )
+#             if not exist:
+#                 game_user_to_insert.append(
+#                     {
+#                         "game_ID": game_id,
+#                         "user_ID": str(current_user_id),
+#                         "platform": platform,
+#                         "num_trophies": game.get("earnedTrophy", 0),
+#                         "play_count": game.get("play_count", 0),
+#                     },
+#                 )
+#             else:
+#                 game_user_to_update.append(
+#                     {
+#                         "game_ID": exist["game_ID"],
+#                         "user_ID": exist["user_ID"],
+#                         "platform": exist["platform"],
+#                         "num_trophies": game.get("earnedTrophy", 0),
+#                         "play_count": game.get("play_count", 0),
+#                     },
+#                 )
         
-        time.sleep(1.0)  # To avoid hitting API rate limits too quickly
+#         time.sleep(1.0)  # To avoid hitting API rate limits too quickly
         
-    if games_to_insert:
-        unique_games = []
-        seen_igdb_ids = set(g["igdb_id"] for g in db["games"].find({}, {"igdb_id": 1}) if g.get("igdb_id") is not None)
-        seen_name_extid = set((g["name"].lower(), g.get("psn_game_ID") or g.get("steam_game_ID")) for g in db["games"].find({}, {"name": 1, "psn_game_ID": 1, "steam_game_ID": 1}))
+#     if games_to_insert:
+#         unique_games = []
+#         seen_igdb_ids = set(g["igdb_id"] for g in db["games"].find({}, {"igdb_id": 1}) if g.get("igdb_id") is not None)
+#         seen_name_extid = set((g["name"].lower(), g.get("psn_game_ID") or g.get("steam_game_ID")) for g in db["games"].find({}, {"name": 1, "psn_game_ID": 1, "steam_game_ID": 1}))
         
-        for game in games_to_insert:
-            key = (game["name"].lower(), game.get("psn_game_ID") or game.get("steam_game_ID"))
-            if (game.get("igdb_id") is not None and game["igdb_id"] not in seen_igdb_ids) or (game.get("igdb_id") is None and key not in seen_name_extid):
-                unique_games.append(game)
-                if game.get("igdb_id") is not None:
-                    seen_igdb_ids.add(game["igdb_id"])
-                seen_name_extid.add(key)
-        games_to_insert = unique_games
+#         for game in games_to_insert:
+#             key = (game["name"].lower(), game.get("psn_game_ID") or game.get("steam_game_ID"))
+#             if (game.get("igdb_id") is not None and game["igdb_id"] not in seen_igdb_ids) or (game.get("igdb_id") is None and key not in seen_name_extid):
+#                 unique_games.append(game)
+#                 if game.get("igdb_id") is not None:
+#                     seen_igdb_ids.add(game["igdb_id"])
+#                 seen_name_extid.add(key)
+#         games_to_insert = unique_games
         
-        if games_to_insert != []:
-            result = db["games"].insert_many(games_to_insert)
-            logging.info(f"Inserted {len(result.inserted_ids)} new games into the database.")
+#         if games_to_insert != []:
+#             result = db["games"].insert_many(games_to_insert)
+#             logging.info(f"Inserted {len(result.inserted_ids)} new games into the database.")
             
-        if games_to_update != []:
-            bulk_updates = []
-            for game in games_to_update:
-                if platform == "steam":
-                    bulk_updates.append(
-                        UpdateOne(
-                            {"_id": game["_id"]},
-                            {"$set": {
-                                "steam_game_ID": game["steam_game_ID"]
-                            }},
-                        )
-                    )
-                elif platform == "psn":
-                    bulk_updates.append(
-                        UpdateOne(
-                            {"_id": game["_id"]},
-                            {"$set": {
-                                "psn_game_ID": game["psn_game_ID"]
-                            }},
-                        )
-                    )
-            try:
-                db["games"].bulk_write(bulk_updates)
-                logging.info(f"Updated {len(bulk_updates)} games in the database.")
-            except errors.BulkWriteError as bwe:
-                logging.error(f"Bulk write error: {bwe.details}")
+#         if games_to_update != []:
+#             bulk_updates = []
+#             for game in games_to_update:
+#                 if platform == "steam":
+#                     bulk_updates.append(
+#                         UpdateOne(
+#                             {"_id": game["_id"]},
+#                             {"$set": {
+#                                 "steam_game_ID": game["steam_game_ID"]
+#                             }},
+#                         )
+#                     )
+#                 elif platform == "psn":
+#                     bulk_updates.append(
+#                         UpdateOne(
+#                             {"_id": game["_id"]},
+#                             {"$set": {
+#                                 "psn_game_ID": game["psn_game_ID"]
+#                             }},
+#                         )
+#                     )
+#             try:
+#                 db["games"].bulk_write(bulk_updates)
+#                 logging.info(f"Updated {len(bulk_updates)} games in the database.")
+#             except errors.BulkWriteError as bwe:
+#                 logging.error(f"Bulk write error: {bwe.details}")
 
             
-        for game_doc in games_to_insert:            
-            game_id = db["games"].find_one({"normalized_name": game_doc["normalized_name"]})["_id"]
-            exist = db["game_user"].find_one(
-                {
-                    "game_ID": game_id,
-                    "user_ID": str(current_user_id),
-                    "platform": platform,
-                }
-            )
-            if not exist:
-                game_user_to_insert.append(
-                    {
-                        "game_ID": game_id,
-                        "user_ID": str(current_user_id),
-                        "platform": platform,
-                        "num_trophies": game_doc.get("earnedTrophy",0),
-                        "play_count": game_doc.get("play_count", 0),
-                    },
-                )
-            else:
-                game_user_to_update.append(
-                    {
-                        "game_ID": exist["game_ID"],
-                        "user_ID": exist["user_ID"],
-                        "platform": exist["platform"],
-                        "num_trophies": game_doc.get("earnedTrophy",0),
-                        "play_count": game_doc.get("play_count", 0),
-                    },
-                )
+#         for game_doc in games_to_insert:            
+#             game_id = db["games"].find_one({"normalized_name": game_doc["normalized_name"]})["_id"]
+#             exist = db["game_user"].find_one(
+#                 {
+#                     "game_ID": game_id,
+#                     "user_ID": str(current_user_id),
+#                     "platform": platform,
+#                 }
+#             )
+#             if not exist:
+#                 game_user_to_insert.append(
+#                     {
+#                         "game_ID": game_id,
+#                         "user_ID": str(current_user_id),
+#                         "platform": platform,
+#                         "num_trophies": game_doc.get("earnedTrophy",0),
+#                         "play_count": game_doc.get("play_count", 0),
+#                     },
+#                 )
+#             else:
+#                 game_user_to_update.append(
+#                     {
+#                         "game_ID": exist["game_ID"],
+#                         "user_ID": exist["user_ID"],
+#                         "platform": exist["platform"],
+#                         "num_trophies": game_doc.get("earnedTrophy",0),
+#                         "play_count": game_doc.get("play_count", 0),
+#                     },
+#                 )
                 
-        #Check in game_user_to_update and game_user_to_insert if there are num_trophies, play_count or game_ID is None
-        game_user_to_insert = [
-            game_user for game_user in game_user_to_insert
-            if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None and game_user.get("user_ID") is not None and game_user.get("platform") is not None
-        ]
+#         #Check in game_user_to_update and game_user_to_insert if there are num_trophies, play_count or game_ID is None
+#         game_user_to_insert = [
+#             game_user for game_user in game_user_to_insert
+#             if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None and game_user.get("user_ID") is not None and game_user.get("platform") is not None
+#         ]
         
-        game_user_to_update = [
-            game_user for game_user in game_user_to_update
-            if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None and game_user.get("user_ID") is not None and game_user.get("platform") is not None
-        ]
+#         game_user_to_update = [
+#             game_user for game_user in game_user_to_update
+#             if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None and game_user.get("user_ID") is not None and game_user.get("platform") is not None
+#         ]
         
-        # Check in game_user_to_insert if there are any duplicates of game_ID, user_ID and platform
-        seen_game_user = set()
-        unique_game_user_to_insert = []
-        for game_user in game_user_to_insert:
-            key = (game_user["game_ID"], game_user["user_ID"], game_user["platform"])
-            if key not in seen_game_user:
-                unique_game_user_to_insert.append(game_user)
-                seen_game_user.add(key)
-        game_user_to_insert = unique_game_user_to_insert
+#         # Check in game_user_to_insert if there are any duplicates of game_ID, user_ID and platform
+#         seen_game_user = set()
+#         unique_game_user_to_insert = []
+#         for game_user in game_user_to_insert:
+#             key = (game_user["game_ID"], game_user["user_ID"], game_user["platform"])
+#             if key not in seen_game_user:
+#                 unique_game_user_to_insert.append(game_user)
+#                 seen_game_user.add(key)
+#         game_user_to_insert = unique_game_user_to_insert
         
-        # Check in game_user_to_update if there are any duplicates of game_ID, user_ID and platform
-        seen_game_user = set()
-        unique_game_user_to_update = []
-        for game_user in game_user_to_update:
-            key = (game_user["game_ID"], game_user["user_ID"], game_user["platform"])
-            if key not in seen_game_user:
-                unique_game_user_to_update.append(game_user)
-                seen_game_user.add(key)
-        game_user_to_update = unique_game_user_to_update
+#         # Check in game_user_to_update if there are any duplicates of game_ID, user_ID and platform
+#         seen_game_user = set()
+#         unique_game_user_to_update = []
+#         for game_user in game_user_to_update:
+#             key = (game_user["game_ID"], game_user["user_ID"], game_user["platform"])
+#             if key not in seen_game_user:
+#                 unique_game_user_to_update.append(game_user)
+#                 seen_game_user.add(key)
+#         game_user_to_update = unique_game_user_to_update
         
 
-        try:
-            db["game_user"].insert_many(game_user_to_insert)
-            logging.info(f"Inserted {len(game_user_to_insert)} games-user linkages into the database.")
-        except errors.BulkWriteError as bwe:
-            logging.error(f"Bulk write error: {bwe.details}")
+#         try:
+#             db["game_user"].insert_many(game_user_to_insert)
+#             logging.info(f"Inserted {len(game_user_to_insert)} games-user linkages into the database.")
+#         except errors.BulkWriteError as bwe:
+#             logging.error(f"Bulk write error: {bwe.details}")
             
-    if  game_user_to_update != [] and len(game_user_to_update) > 0:
-        bulk_updates = []
-        for game_user in game_user_to_update:
-            bulk_updates.append(
-                UpdateOne(
-                    {
-                        "game_ID": game_user["game_ID"],
-                        "user_id": game_user["user_ID"],
-                        "platform": game_user["platform"],
-                    },
-                    {
-                        "$set": {
-                            "num_trophies": game_user["num_trophies"],
-                            "play_count": game_user["play_count"],
-                        }
-                    },
-                )
-            )
-        try:
-            db["game_user"].bulk_write(bulk_updates)
-            logging.info(f"Updated {len(game_user_to_update)} games-user linkages in the database.")
-        except errors as e:
-            logging.error(f"Error updating game-user linkages: {e}")
+#     if  game_user_to_update != [] and len(game_user_to_update) > 0:
+#         bulk_updates = []
+#         for game_user in game_user_to_update:
+#             bulk_updates.append(
+#                 UpdateOne(
+#                     {
+#                         "game_ID": game_user["game_ID"],
+#                         "user_id": game_user["user_ID"],
+#                         "platform": game_user["platform"],
+#                     },
+#                     {
+#                         "$set": {
+#                             "num_trophies": game_user["num_trophies"],
+#                             "play_count": game_user["play_count"],
+#                         }
+#                     },
+#                 )
+#             )
+#         try:
+#             db["game_user"].bulk_write(bulk_updates)
+#             logging.info(f"Updated {len(game_user_to_update)} games-user linkages in the database.")
+#         except errors as e:
+#             logging.error(f"Error updating game-user linkages: {e}")
         
-    # Optionally update linkage summary fields
-    try:
-        db["platforms-users"].update_one(
-            {"user_id": str(current_user_id), "platform": platform},
-            {
-                "$set": {
-                    "game_count": stats.get("gameCount", 0),
-                    "earned_achievements": stats.get("earnedTrophyCount", 0),
-                    "play_count": stats.get("totPlayTimeCount", 0),
-                    "full_trophies_count": stats.get("completeTrophyCount", 0),
-                }
-            },
-        )
-        logging.info(f"Updated platform summary for {platform} for user {current_user_id}")
-    except errors.PyMongoError as e:
-        logging.error(f"Error updating platform summary for {platform}: {e}")
+#     # Optionally update linkage summary fields
+#     try:
+#         db["platforms-users"].update_one(
+#             {"user_id": str(current_user_id), "platform": platform},
+#             {
+#                 "$set": {
+#                     "game_count": stats.get("gameCount", 0),
+#                     "earned_achievements": stats.get("earnedTrophyCount", 0),
+#                     "play_count": stats.get("totPlayTimeCount", 0),
+#                     "full_trophies_count": stats.get("completeTrophyCount", 0),
+#                 }
+#             },
+#         )
+#         logging.info(f"Updated platform summary for {platform} for user {current_user_id}")
+#     except errors.PyMongoError as e:
+#         logging.error(f"Error updating platform summary for {platform}: {e}")
         
-    # return Response(message=f"${platform} data synchronized")
-    return {"message": f"{platform} data synchronized"}
+#     # return Response(message=f"${platform} data synchronized")
+#     return {"message": f"{platform} data synchronized"}
+
+@app.post("/sync/{platform}", response_model=dict)
+async def sync_user_platform(
+    platform: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    redis_url = "redis://redis:6379"
+    redis = await create_pool(RedisSettings.from_dsn(redis_url))
+    job = await redis.enqueue_job("sync_job", str(current_user.id), platform)
+    # Salva lo stato del job in schedules (pending)
+    db["schedules"].insert_one(
+        {
+            "job_id": job.job_id,
+            "user_id": str(current_user.id),
+            "platform": platform,
+            "status": "pending",
+        }
+    )
+    return {"detail": "Sync job queued", "job_id": job.job_id}
+
+@app.get("/sync/status/{job_id}")
+def get_sync_status(job_id: str, db=Depends(get_db)):
+    job = db["schedules"].find_one({"job_id": job_id})
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {"status": job["status"]}
 
 #Per alcuni di questi filtri sarebbe l'ideale avere dei dropdown con i valori possibili e con la possibilita' di selezionarne piu' di uno e con la possibilita' di cercarne nel dropdown
 @app.get("/games", response_model=list[dict])

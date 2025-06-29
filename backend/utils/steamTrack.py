@@ -8,9 +8,9 @@ import logging
 import sys
 import time
 
-logger = logging.getLogger(__name__)
-
-def sync_steam(steam_api_key):
+def sync_steam(steam_api_key, logger=None):
+    if logger is None:
+        logger = logging.getLogger()
     steam = Steam(steam_api_key)
 
     user = steam.users.get_user_details("76561198074617013")

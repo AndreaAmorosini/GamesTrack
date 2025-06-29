@@ -51,3 +51,5 @@ igdb-api-v4
 PyJWT
 passlib[bcrypt]
 pycountry
+arq
+redis

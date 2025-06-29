@@ -38,12 +38,38 @@ services:
     environment:
       MONGO_INIT_USER: root
       MONGO_INIT_PASS: root
-      IGDB_CLIENT_ID: CLIENT_ID
-      IGDB_CLIENT_SECRET: CLIENT_SECRET
+      IGDB_CLIENT_ID: IGDB_CLIENT_ID
+      IGDB_CLIENT_SECRET: IGDB_CLIENT_SECRET
       # IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}                       # Luigi
       # IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}               # Luigi
     ports:
       - "8000:8000"
+    networks:
+      - gametrack
+
+  redis:
+    image: redis
+    restart: always
+    ports:
+      - 6379:6379
+    networks:
+      - gametrack
+
+  sync-worker:
+    build:
+      context: ./backend
+    container_name: sync-worker
+    command: ["python", "-u", "app/worker_sync.py"]
+    depends_on:
+      - fastapi
+      - mongo
+      - redis
+    environment:
+      PYTHONUNBUFFERED: 1
+      MONGO_INIT_USER: root
+      MONGO_INIT_PASS: root
+      IGDB_CLIENT_ID: IGDB_CLIENT_ID
+      IGDB_CLIENT_SECRET: IGDB_CLIENT_SECRET
     networks:
       - gametrack
 

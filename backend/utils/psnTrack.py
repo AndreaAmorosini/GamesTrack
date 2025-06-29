@@ -9,10 +9,10 @@ import time
 import logging
 import sys
 
-logger = logging.getLogger(__name__)
 
-
-def sync_psn(npsso):
+def sync_psn(npsso, logger=None):
+    if logger is None:
+        logger = logging.getLogger()
     logger.info("Starting PSN synchronization...")
     # Create a PSNAWP object
     psn = PSNAWP(npsso)
