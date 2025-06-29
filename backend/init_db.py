@@ -214,7 +214,7 @@ def init_mongo():
             if "game_user" not in existing:
                 db.create_collection("game_user")
                 db["game_user"].create_index(
-                    [("game_ID", ASCENDING), ("user_id", ASCENDING)], unique=True
+                    [("game_ID", ASCENDING), ("user_ID", ASCENDING), ("platform", ASCENDING)], unique=True
                 )
 
                 db["game_user"].insert_one(

@@ -255,6 +255,7 @@ def update_user(
 def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
     """Synchronize data for a user on a specified platform."""
     
+    current_user_id = current_user.id
     def normalize_name(name):
         if not name:
             return ""
@@ -313,6 +314,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         existing_external_ids = set(g["psn_game_ID"] for g in db["games"].find({}, {"psn_game_ID": 1}) if g.get("psn_game_ID") is not None)
     
     games_to_insert = []
+    games_to_update = []
     game_user_to_insert = []
     game_user_to_update = []
     
@@ -332,6 +334,9 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
             external_id = game.get("product_id", None)
             
         if game_name.lower() not in existing_game_names and ((external_id is not None and external_id not in existing_external_ids) or external_id is None):
+            if "demo" in game_name.lower() or "beta" in game_name.lower():
+                logging.info(f"Skipping demo/beta game: {game_name}")
+                continue
             #Retrieve metadata for the game
             logging.info(f"Retrieving metadata for game: {game_name} with external ID: {external_id}")
             metadata = igdb_client.get_game_metadata(game_name, external_id=external_id)
@@ -381,11 +386,19 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                     ]
                 }
             )
+            if existing_game:
+                logging.info(f"Game already exists in the database: {game_name}")
+                if platform == "steam" and existing_game.get("steam_game_ID") is None:
+                    existing_game["steam_game_ID"] = external_id
+                    games_to_update.append(existing_game)
+                elif platform == "psn" and existing_game.get("psn_game_ID") is None:
+                    existing_game["psn_game_ID"] = external_id
+                    games_to_update.append(existing_game)
             game_id = existing_game["_id"] if existing_game else None
             exist = db["game_user"].find_one(
                 {
                     "game_ID": game_id,
-                    "user_id": str(current_user.id),
+                    "user_ID": str(current_user_id),
                     "platform": platform,
                 }
             )
@@ -393,9 +406,9 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 game_user_to_insert.append(
                     {
                         "game_ID": game_id,
-                        "user_id": str(current_user.id),
+                        "user_ID": str(current_user_id),
                         "platform": platform,
-                        "num_trophies": game.get("earnedTrophy"),
+                        "num_trophies": game.get("earnedTrophy", 0),
                         "play_count": game.get("play_count", 0),
                     },
                 )
@@ -403,14 +416,14 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 game_user_to_update.append(
                     {
                         "game_ID": exist["game_ID"],
-                        "user_id": exist["user_id"],
+                        "user_ID": exist["user_ID"],
                         "platform": exist["platform"],
-                        "num_trophies": game.get("earnedTrophy"),
+                        "num_trophies": game.get("earnedTrophy", 0),
                         "play_count": game.get("play_count", 0),
                     },
                 )
         
-        time.sleep(0.5)  # To avoid hitting API rate limits too quickly
+        time.sleep(1.0)  # To avoid hitting API rate limits too quickly
         
     if games_to_insert:
         unique_games = []
@@ -429,6 +442,33 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         if games_to_insert != []:
             result = db["games"].insert_many(games_to_insert)
             logging.info(f"Inserted {len(result.inserted_ids)} new games into the database.")
+            
+        if games_to_update != []:
+            bulk_updates = []
+            for game in games_to_update:
+                if platform == "steam":
+                    bulk_updates.append(
+                        UpdateOne(
+                            {"_id": game["_id"]},
+                            {"$set": {
+                                "steam_game_ID": game["steam_game_ID"]
+                            }},
+                        )
+                    )
+                elif platform == "psn":
+                    bulk_updates.append(
+                        UpdateOne(
+                            {"_id": game["_id"]},
+                            {"$set": {
+                                "psn_game_ID": game["psn_game_ID"]
+                            }},
+                        )
+                    )
+            try:
+                db["games"].bulk_write(bulk_updates)
+                logging.info(f"Updated {len(bulk_updates)} games in the database.")
+            except errors.BulkWriteError as bwe:
+                logging.error(f"Bulk write error: {bwe.details}")
 
             
         for game_doc in games_to_insert:            
@@ -436,7 +476,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
             exist = db["game_user"].find_one(
                 {
                     "game_ID": game_id,
-                    "user_id": str(current_user.id),
+                    "user_ID": str(current_user_id),
                     "platform": platform,
                 }
             )
@@ -444,9 +484,9 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 game_user_to_insert.append(
                     {
                         "game_ID": game_id,
-                        "user_id": str(current_user.id),
+                        "user_ID": str(current_user_id),
                         "platform": platform,
-                        "num_trophies": game_doc.get("earnedTrophy"),
+                        "num_trophies": game_doc.get("earnedTrophy",0),
                         "play_count": game_doc.get("play_count", 0),
                     },
                 )
@@ -454,9 +494,9 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 game_user_to_update.append(
                     {
                         "game_ID": exist["game_ID"],
-                        "user_id": exist["user_id"],
+                        "user_ID": exist["user_ID"],
                         "platform": exist["platform"],
-                        "num_trophies": game_doc.get("earnedTrophy"),
+                        "num_trophies": game_doc.get("earnedTrophy",0),
                         "play_count": game_doc.get("play_count", 0),
                     },
                 )
@@ -464,13 +504,34 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
         #Check in game_user_to_update and game_user_to_insert if there are num_trophies, play_count or game_ID is None
         game_user_to_insert = [
             game_user for game_user in game_user_to_insert
-            if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None
+            if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None and game_user.get("user_ID") is not None and game_user.get("platform") is not None
         ]
         
         game_user_to_update = [
             game_user for game_user in game_user_to_update
-            if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None
+            if game_user.get("num_trophies") is not None and game_user.get("play_count") is not None and game_user.get("game_ID") is not None and game_user.get("user_ID") is not None and game_user.get("platform") is not None
         ]
+        
+        # Check in game_user_to_insert if there are any duplicates of game_ID, user_ID and platform
+        seen_game_user = set()
+        unique_game_user_to_insert = []
+        for game_user in game_user_to_insert:
+            key = (game_user["game_ID"], game_user["user_ID"], game_user["platform"])
+            if key not in seen_game_user:
+                unique_game_user_to_insert.append(game_user)
+                seen_game_user.add(key)
+        game_user_to_insert = unique_game_user_to_insert
+        
+        # Check in game_user_to_update if there are any duplicates of game_ID, user_ID and platform
+        seen_game_user = set()
+        unique_game_user_to_update = []
+        for game_user in game_user_to_update:
+            key = (game_user["game_ID"], game_user["user_ID"], game_user["platform"])
+            if key not in seen_game_user:
+                unique_game_user_to_update.append(game_user)
+                seen_game_user.add(key)
+        game_user_to_update = unique_game_user_to_update
+        
 
         try:
             db["game_user"].insert_many(game_user_to_insert)
@@ -485,7 +546,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 UpdateOne(
                     {
                         "game_ID": game_user["game_ID"],
-                        "user_id": game_user["user_id"],
+                        "user_id": game_user["user_ID"],
                         "platform": game_user["platform"],
                     },
                     {
@@ -505,7 +566,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
     # Optionally update linkage summary fields
     try:
         db["platforms-users"].update_one(
-            {"user_id": str(current_user.id), "platform": platform},
+            {"user_id": str(current_user_id), "platform": platform},
             {
                 "$set": {
                     "game_count": stats.get("gameCount", 0),
@@ -515,7 +576,7 @@ def sync_user_platform(platform: str, current_user: Annotated[User, Depends(get_
                 }
             },
         )
-        logging.info(f"Updated platform summary for {platform} for user {current_user.id}")
+        logging.info(f"Updated platform summary for {platform} for user {current_user_id}")
     except errors.PyMongoError as e:
         logging.error(f"Error updating platform summary for {platform}: {e}")
         

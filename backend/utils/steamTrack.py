@@ -88,10 +88,10 @@ def sync_steam(steam_api_key):
         columns=[
             "title_id",
             "name",
-            "play_duration",
+            "play_count",
             "totTrophy",
             "earnedTrophy",
-            "Achievement%",
+            "percTrophy",
         ],
     )
 

@@ -51,7 +51,6 @@ class IGDBAutoAuthClient:
         return self.query("games", query)
     
     def get_game_metadata(self, game_name: str, external_id: str = None):
-        logger.info(f"Fetching metadata for game: {game_name} with external ID: {external_id}")
         if external_id is not None:
             external_game_query = f'''
             fields
@@ -116,7 +115,6 @@ class IGDBAutoAuthClient:
             limit 1;
             '''
         result = self.query_games(query)
-        logger.info(result)
         if result is None or result == "[]":
             logger.info(f"No game found for name: {game_name} with external ID: {external_id}")
             return None
