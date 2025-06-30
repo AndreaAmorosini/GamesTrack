@@ -177,15 +177,15 @@ async def sync_job(ctx, user_id, platform, string_job_id):
             existing_external_ids = set()
             if platform == "steam":
                 existing_external_ids = set(
-                    g["steam_game_ID"]
-                    for g in db["games"].find({}, {"steam_game_ID": 1})
-                    if g.get("steam_game_ID") is not None
+                    g["steam_game_id"]
+                    for g in db["games"].find({}, {"steam_game_id": 1})
+                    if g.get("steam_game_id") is not None
                 )
             elif platform == "psn":
                 existing_external_ids = set(
-                    g["psn_game_ID"]
-                    for g in db["games"].find({}, {"psn_game_ID": 1})
-                    if g.get("psn_game_ID") is not None
+                    g["psn_game_id"]
+                    for g in db["games"].find({}, {"psn_game_id": 1})
+                    if g.get("psn_game_id") is not None
                 )
 
             games_to_insert, games_to_update = [], []
@@ -242,8 +242,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                         "name": metadata.get("name", game_name)
                         if metadata is not None
                         else game_name,
-                        "psn_game_ID": external_id if platform == "psn" else None,
-                        "steam_game_ID": external_id if platform == "steam" else None,
+                        "psn_game_id": external_id if platform == "psn" else None,
+                        "steam_game_id": external_id if platform == "steam" else None,
                         "platforms": metadata.get("platforms", [])
                         if metadata is not None
                         else [],
@@ -301,8 +301,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 {"name": game_name},
                                 {"original_name": game_name},
                                 {"normalized_name": normalize_name(game_name)},
-                                {"psn_game_ID": external_id},
-                                {"steam_game_ID": external_id},
+                                {"psn_game_id": external_id},
+                                {"steam_game_id": external_id},
                             ]
                         }
                     )
@@ -311,26 +311,26 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                         logger.info(f"Game already exists in the database: {game_name}")
                         job_file_handler.flush()
 
-                        if (platform == "steam" and existing_game.get("steam_game_ID") is None):
-                            existing_game["steam_game_ID"] = external_id
+                        if (platform == "steam" and existing_game.get("steam_game_id") is None):
+                            existing_game["steam_game_id"] = external_id
                             games_to_update.append(existing_game)
-                        elif platform == "psn" and existing_game.get("psn_game_ID") is None:
-                            existing_game["psn_game_ID"] = external_id
+                        elif platform == "psn" and existing_game.get("psn_game_id") is None:
+                            existing_game["psn_game_id"] = external_id
                             games_to_update.append(existing_game)
                             
                     game_id = existing_game["_id"] if existing_game else None
                     exist = db["game_user"].find_one(
                         {
-                            "game_ID": game_id,
-                            "user_ID": str(user_id),
+                            "game_id": game_id,
+                            "user_id": str(user_id),
                             "platform": platform,
                         }
                     )
                     if not exist:
                         game_user_to_insert.append(
                             {
-                                "game_ID": game_id,
-                                "user_ID": str(user_id),
+                                "game_id": game_id,
+                                "user_id": str(user_id),
                                 "platform": platform,
                                 "num_trophies": game.get("earnedTrophy", 0),
                                 "play_count": game.get("play_count", 0),
@@ -339,8 +339,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     else:
                         game_user_to_update.append(
                             {
-                                "game_ID": exist["game_ID"],
-                                "user_ID": exist["user_ID"],
+                                "game_id": exist["game_id"],
+                                "user_id": exist["user_id"],
                                 "platform": exist["platform"],
                                 "num_trophies": game.get("earnedTrophy", 0),
                                 "play_count": game.get("play_count", 0),
@@ -356,15 +356,15 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     if g.get("igdb_id") is not None
                 )
                 seen_name_extid = set(
-                    (g["name"].lower(), g.get("psn_game_ID") or g.get("steam_game_ID"))
+                    (g["name"].lower(), g.get("psn_game_id") or g.get("steam_game_id"))
                     for g in db["games"].find(
-                        {}, {"name": 1, "psn_game_ID": 1, "steam_game_ID": 1}
+                        {}, {"name": 1, "psn_game_id": 1, "steam_game_id": 1}
                     )
                 )
                 for game in games_to_insert:
                     key = (
                         game["name"].lower(),
-                        game.get("psn_game_ID") or game.get("steam_game_ID"),
+                        game.get("psn_game_id") or game.get("steam_game_id"),
                     )
                     if (game.get("igdb_id") is not None and game["igdb_id"] not in seen_igdb_ids) or (game.get("igdb_id") is None and key not in seen_name_extid):
                         unique_games.append(game)
@@ -387,14 +387,14 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                             bulk_updates.append(
                                 UpdateOne(
                                     {"_id": game["_id"]},
-                                    {"$set": {"steam_game_ID": game["steam_game_ID"]}},
+                                    {"$set": {"steam_game_id": game["steam_game_id"]}},
                                 )
                             )
                         elif platform == "psn":
                             bulk_updates.append(
                                 UpdateOne(
                                     {"_id": game["_id"]},
-                                    {"$set": {"psn_game_ID": game["psn_game_ID"]}},
+                                    {"$set": {"psn_game_id": game["psn_game_id"]}},
                                 )
                             )
                     try:
@@ -410,16 +410,16 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     )["_id"]
                     exist = db["game_user"].find_one(
                         {
-                            "game_ID": game_id,
-                            "user_ID": str(user_id),
+                            "game_id": game_id,
+                            "user_id": str(user_id),
                             "platform": platform,
                         }
                     )
                     if not exist:
                         game_user_to_insert.append(
                             {
-                                "game_ID": game_id,
-                                "user_ID": str(user_id),
+                                "game_id": game_id,
+                                "user_id": str(user_id),
                                 "platform": platform,
                                 "num_trophies": game_doc.get("earnedTrophy", 0),
                                 "play_count": game_doc.get("play_count", 0),
@@ -428,8 +428,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     else:
                         game_user_to_update.append(
                             {
-                                "game_ID": exist["game_ID"],
-                                "user_ID": exist["user_id"],
+                                "game_id": exist["game_id"],
+                                "user_id": exist["user_id"],
                                 "platform": exist["platform"],
                                 "num_trophies": game_doc.get("earnedTrophy", 0),
                                 "play_count": game_doc.get("play_count", 0),
@@ -442,14 +442,14 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     for g in game_user_to_insert
                     if g.get("num_trophies") is not None
                     and g.get("play_count") is not None
-                    and g.get("game_ID") is not None
-                    and g.get("user_ID") is not None
+                    and g.get("game_id") is not None
+                    and g.get("user_id") is not None
                     and g.get("platform") is not None
                 ]
                 seen_game_user = set()
                 unique_game_user_to_insert = []
                 for g in game_user_to_insert:
-                    key = (g["game_ID"], g["user_ID"], g["platform"])
+                    key = (g["game_id"], g["user_id"], g["platform"])
                     if key not in seen_game_user:
                         unique_game_user_to_insert.append(g)
                         seen_game_user.add(key)
@@ -479,8 +479,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     bulk_updates.append(
                         UpdateOne(
                             {
-                                "game_ID": g["game_ID"],
-                                "user_ID": g["user_ID"],
+                                "game_id": g["game_id"],
+                                "user_id": g["user_id"],
                                 "platform": g["platform"],
                             },
                             {

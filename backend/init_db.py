@@ -155,7 +155,7 @@ def init_mongo():
                     {
                         "platform": "steam", #steam, psn, xbox
                         "user_id": user_id,
-                        "platform_ID": "steam_id",
+                        "platform_id": "steam_id",
                         "api_key": "steam_api_key",
                         "game_count": 10, # total games played on this platform
                         "earned_achievements": 5, # total achievements earned
@@ -168,7 +168,7 @@ def init_mongo():
                     {
                         "platform": "psn", #steam, psn, xbox
                         "user_id": user_id,
-                        "platform_ID": "psn_id",
+                        "platform_id": "psn_id",
                         "api_key": "psn_api_key",
                         "game_count": 20, # total games played on this platform
                         "earned_achievements": 55, # total achievements earned
@@ -189,8 +189,8 @@ def init_mongo():
                 db["games"].insert_one(
                     {
                         "igdb_id": 305152,
-                        "psn_game_ID": 10008503,
-                        "steam_game_ID": None,
+                        "psn_game_id": 10008503,
+                        "steam_game_id": None,
                         "name": "Clair Obscur: Expedition 33",
                         "platforms": [169, 6],  # List of platform IDs
                         "genres": [12, 16],  # List of genre IDs
@@ -214,13 +214,13 @@ def init_mongo():
             if "game_user" not in existing:
                 db.create_collection("game_user")
                 db["game_user"].create_index(
-                    [("game_ID", ASCENDING), ("user_ID", ASCENDING), ("platform", ASCENDING)], unique=True
+                    [("game_id", ASCENDING), ("user_id", ASCENDING), ("platform", ASCENDING)], unique=True
                 )
 
                 db["game_user"].insert_one(
                     {
-                        "game_ID": "test_game_ID",
-                        "user_ID": user_id,
+                        "game_id": "test_game_id",
+                        "user_id": user_id,
                         "platform": platIdTest[0],  # steam
                         "num_trophies": 3,
                         "play_count": 10,

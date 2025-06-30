@@ -67,10 +67,10 @@ def get_user(db, username: str):
         # Aggiungi le informazioni al documento utente
         user_doc["id"] = str(user_doc["_id"])
         if steam_platform:
-            user_doc["steam"] = steam_platform.get("platform_ID")
+            user_doc["steam"] = steam_platform.get("platform_id")
             user_doc["steam_api_key"] = steam_platform.get("api_key")
         if psn_platform:
-            user_doc["psn"] = psn_platform.get("platform_ID")
+            user_doc["psn"] = psn_platform.get("platform_id")
             user_doc["psn_api_key"] = psn_platform.get("api_key")
             
         return UserInDB(**user_doc)
