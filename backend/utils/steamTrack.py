@@ -21,6 +21,7 @@ def sync_steam(steam_api_key, logger=None):
         + " NAME : "
         + str(user["player"]["personaname"])
     )
+    print("STEAMID: " + str(user["player"]["steamid"]) + " NAME : " + str(user["player"]["personaname"]), flush=True)
 
     steamId = str(user["player"]["steamid"])  # 76561198074617013
 

@@ -14,6 +14,7 @@ def sync_psn(npsso, logger=None):
     if logger is None:
         logger = logging.getLogger()
     logger.info("Starting PSN synchronization...")
+    print("Starting PSN synchronization...", flush=True)
     # Create a PSNAWP object
     psn = PSNAWP(npsso)
 
@@ -47,8 +48,10 @@ def sync_psn(npsso, logger=None):
     gameCount = 0
     totPlayTimeCount = 0
     logger.info("Recupero Dati Giochi: ")
+    print("Recupero Dati Giochi: ", flush=True)
     for t in client.title_stats():
         logger.info("GAME: Title ID: " + str(t.title_id) + " / Name: " + str(t.name))
+        print("GAME: Title ID: " + str(t.title_id) + " / Name: " + str(t.name), flush=True)
         ids = get_np_communication_id_with_timeout(t.title_id)
         np_communication_id = ids["np_communication_id"]
         product_id = ids["product_id"]
@@ -85,6 +88,13 @@ def sync_psn(npsso, logger=None):
             + str(tr.np_communication_id)
             + " / Name: "
             + str(tr.title_name)
+        )
+        print(
+            "TROPHY: Title ID: "
+            + str(tr.np_communication_id)
+            + " / Name: "
+            + str(tr.title_name),
+            flush=True,
         )
         listGame = [
             tr.np_communication_id,

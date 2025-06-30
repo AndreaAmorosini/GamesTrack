@@ -59,7 +59,7 @@ services:
     build:
       context: ./backend
     container_name: sync-worker
-    command: ["python", "-u", "app/worker_sync.py"]
+    command: ["arq", "app.worker_sync.WorkerSettings", "--watch", "app"]
     depends_on:
       - fastapi
       - mongo
@@ -72,6 +72,8 @@ services:
       IGDB_CLIENT_SECRET: IGDB_CLIENT_SECRET
     networks:
       - gametrack
+    volumes:
+      - ./backend:/app
 
 
   frontend:

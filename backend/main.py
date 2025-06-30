@@ -593,14 +593,18 @@ async def sync_user_platform(
 ):
     redis_url = "redis://redis:6379"
     redis = await create_pool(RedisSettings.from_dsn(redis_url))
-    job = await redis.enqueue_job("sync_job", str(current_user.id), platform)
+    string_job_id = f"{str(current_user.id)}_{platform}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    job = await redis.enqueue_job("sync_job", str(current_user.id), platform, string_job_id)
     # Salva lo stato del job in schedules (pending)
     db["schedules"].insert_one(
         {
             "job_id": job.job_id,
+            "job_string_id": string_job_id,
             "user_id": str(current_user.id),
             "platform": platform,
-            "status": "pending",
+            "status": "queued",
+            "created_at": datetime.now(),
+            "updated_at": datetime.now(),
         }
     )
     return {"detail": "Sync job queued", "job_id": job.job_id}
