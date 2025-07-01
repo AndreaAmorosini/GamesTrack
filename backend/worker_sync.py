@@ -43,60 +43,48 @@ async def shutdown(ctx):
     logging.info("Worker shutdown complete.")
 
 #TODO: In caso aggiungere che il logging vada su file e che possa essere letto dal frontend associandolo poi con gli id del job
+# TODO: creare una query separata su igdb per i giochi della tre per restringere il margine di errore (forse mettere il filtro per tutte?)
 async def sync_job(ctx, user_id, platform, string_job_id):
     print(f"[DEBUG] 1. Function started: {user_id}, {platform}", flush=True)
 
     try:
-        print(f"[DEBUG] 2. Getting database context", flush=True)
         db = ctx["db"]
-        print(f"[DEBUG] 3. Getting job context", flush=True)
         job = ctx.get("job")
         job_id = getattr(job, 'job_id', None)
         log_id = string_job_id
-        print(f"[DEBUG] 4. Setting up logger with log_id: {log_id}", flush=True)
         # Crea un file handler specifico per questo job
         logger = logging.getLogger(f"sync_job_{log_id}")
         logger.setLevel(logging.INFO)
         if logger.hasHandlers():
             logger.handlers.clear()  # Clear existing handlers to avoid duplicates
-        print(f"[DEBUG] 5. Creating log file handler", flush=True)
         log_filename = f"logs/worker_sync_{log_id}.log"
         job_file_handler = logging.FileHandler(log_filename)
         job_file_handler.setLevel(logging.INFO)
         job_file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         logger.addHandler(job_file_handler)
         
-        print(f"[DEBUG] 6. Logger configured", flush=True)
-
         
         logger.info(f"Starting sync for user {user_id} on platform {platform}")
         job_file_handler.flush()
-        print(f"[DEBUG] 7. Starting job: {user_id}, {platform}", flush=True)
 
-        print(f"[DEBUG] 8. Defining normalize_name function", flush=True)
         def normalize_name(name):
             if not name:
                 return ""
             name = name.translate(str.maketrans("", "", string.punctuation))
             return " ".join(name.lower().split())
 
-        print(f"[DEBUG] 9. Starting try block", flush=True)
         try:
-            print(f"[DEBUG] 10. Updating schedule status to in_progress", flush=True)
             try:
                 result = db["schedules"].update_one(
                     {"job_string_id": string_job_id, "status": "queued"},
                     {"$set": {"status": "in_progress", "updated_at": datetime.now()}},
                 )
-                print(f"[DEBUG] 11. Schedule update result: {result.modified_count} documents modified", flush=True)
 
             except errors.PyMongoError as e:
                 logger.error(f"Error updating schedule for user {user_id} on {platform}: {e}", flush=True)
-                print(f"[DEBUG] 12. Error updating schedule for user {user_id} on {platform}: {e}", flush=True)
                 job_file_handler.flush()
                 return
             
-            print(f"[DEBUG] 13. Checking platform validity", flush=True)
             # Check platform
             if platform not in ["psn", "steam"]:
                 db["schedules"].update_one(
@@ -106,12 +94,9 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                 return
 
             # Check user
-            print(f"[DEBUG] 15. Looking up user in database", flush=True)
             try:
                 user = db.users.find_one({"_id": ObjectId(user_id)})
-                print(f"[DEBUG] 16. User found: {user is not None}", flush=True)
             except errors as e:
-                print(f"[DEBUG] 17. Error finding user: {e}", flush=True)
                 logger.info(f"Error finding user {user_id}: {e}")
                 db["schedules"].update_one(
                     {"job_string_id": string_job_id},
@@ -119,22 +104,18 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                 )
                 return
             if not user:
-                print(f"[DEBUG] 18. User not found", flush=True)
                 db["schedules"].update_one(
                     {"job_string_id": string_job_id},
                     {"$set": {"status": "fail", "error": "User not found", "updated_at": datetime.now()}},
                 )
                 return
 
-            print(f"[DEBUG] 19. Looking up platform linkage", flush=True)
             # Check platform linkage
             try:
                 link = db["platforms-users"].find_one(
                     {"user_id": str(user_id), "platform": platform}
                 )
-                print(f"[DEBUG] 20. Platform link found: {link is not None}", flush=True)
             except errors as e:
-                print(f"[DEBUG] 21. Error finding platform link: {e}", flush=True)
                 logger.info(f"Error finding platform link for user {user_id} on {platform}: {e}")
                 db["schedules"].update_one(
                     {"job_string_id": string_job_id},
@@ -142,7 +123,6 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                 )
                 return
             if not link:
-                print(f"[DEBUG] 22. No platform linkage found", flush=True)
                 logger.info(f"No platform linkage found for user {user_id} on {platform}", flush=True)
                 db["schedules"].update_one(
                     {"job_string_id": string_job_id},
@@ -150,24 +130,19 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                 )
                 return
 
-            print(f"[DEBUG] 23. Getting API key", flush=True)
             api_key = link.get("api_key")
             if api_key is None:
-                print(f"[DEBUG] 24. No API key found", flush=True)
                 db["schedules"].update_one(
                     {"job_string_id": string_job_id},
                     {"$set": {"status": "fail", "error": "No API key", "updated_at": datetime.now()}},
                 )
                 return
 
-            print(f"[DEBUG] 25. About to call sync function for {platform}", flush=True)
             # Call sync function
             logger.info("Calling Platform API...")
             job_file_handler.flush()
-            print(f"[DEBUG] 26. Calling sync function", flush=True)
             stats = sync_psn(api_key, logger=logger) if platform == "psn" else sync_steam(api_key, logger=logger)
             
-            print(f"[DEBUG] 27. Sync function completed, got stats", flush=True)
             full_games_dict = stats["fullGames"]
             print(f"[DEBUG] 28. Full games dict: {full_games_dict}", flush=True)
 
@@ -206,10 +181,10 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     game_name = game_name[: match.start()].strip()
                 external_id = None
                 if platform == "steam":
-                    external_id = game.get("title_id", None)
+                    external_id = int(game["title_id"]) if game.get("title_id") is not None else None
                 elif platform == "psn":
-                    external_id = game.get("product_id", None)
-
+                    external_id = int(game["product_id"]) if game.get("product_id") is not None else None
+                    
                 if game_name.lower() not in existing_game_names and (
                     (external_id is not None and external_id not in existing_external_ids)
                     or external_id is None
@@ -327,6 +302,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                         }
                     )
                     if not exist:
+                        print("[DEBUG] 29. Game not found in game_user collection, inserting new entry", flush=True)
                         game_user_to_insert.append(
                             {
                                 "game_id": game_id,
@@ -337,6 +313,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                             },
                         )
                     else:
+                        print("[DEBUG] 29. Game found in game_user collection, updating existing entry", flush=True)
                         game_user_to_update.append(
                             {
                                 "game_id": exist["game_id"],
@@ -402,12 +379,31 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                         logger.info(f"Updated {len(bulk_updates)} games in the database.")
                         job_file_handler.flush()
                     except errors.BulkWriteError as bwe:
+                        print(f"[DEBUG] 29. Bulk write error: {bwe.details}", flush=True)
                         logger.error(f"Bulk write error: {bwe.details}")
 
                 for game_doc in games_to_insert:
                     game_id = db["games"].find_one(
                         {"normalized_name": game_doc["normalized_name"]}
                     )["_id"]
+                    print(f"[DEBUG] 29. Game ID: {game_id}, {game_doc['original_name']}, {game_doc['normalized_name']}", flush=True)
+                    platform_data = next(
+                        (game for game in full_games_dict 
+                        if game["name"] == game_doc["original_name"] or game["title_name"] == game_doc["original_name"] or game["normalized_name"] == game_doc["normalized_name"]), 
+                        {}
+                    )
+                    game_name = (
+                        platform_data["name"]
+                        if platform_data["name"] is not None
+                        else platform_data["title_name"]
+                    )
+                    if "™" in game_name or "®" in game_name:
+                        game_name = game_name.replace("™", "").replace("®", "").strip()
+                    pattern = re.compile(r"tro(f|ph)[a-z]*", re.IGNORECASE)
+                    match = pattern.search(game_name)
+                    if match:
+                        game_name = game_name[: match.start()].strip()
+
                     exist = db["game_user"].find_one(
                         {
                             "game_id": game_id,
@@ -421,8 +417,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": game_id,
                                 "user_id": str(user_id),
                                 "platform": platform,
-                                "num_trophies": game_doc.get("earnedTrophy", 0),
-                                "play_count": game_doc.get("play_count", 0),
+                                "num_trophies": platform_data.get("earnedTrophy", 0),
+                                "play_count": platform_data.get("play_count", 0),
                             },
                         )
                     else:
@@ -431,46 +427,50 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": exist["game_id"],
                                 "user_id": exist["user_id"],
                                 "platform": exist["platform"],
-                                "num_trophies": game_doc.get("earnedTrophy", 0),
-                                "play_count": game_doc.get("play_count", 0),
+                                "num_trophies": platform_data.get("earnedTrophy", 0),
+                                "play_count": platform_data.get("play_count", 0),
                             },
                         )
 
-                # Filtra e deduplica
-                game_user_to_insert = [
-                    g
-                    for g in game_user_to_insert
-                    if g.get("num_trophies") is not None
-                    and g.get("play_count") is not None
-                    and g.get("game_id") is not None
-                    and g.get("user_id") is not None
-                    and g.get("platform") is not None
-                ]
-                seen_game_user = set()
-                unique_game_user_to_insert = []
-                for g in game_user_to_insert:
-                    key = (g["game_id"], g["user_id"], g["platform"])
-                    if key not in seen_game_user:
-                        unique_game_user_to_insert.append(g)
-                        seen_game_user.add(key)
-                game_user_to_insert = unique_game_user_to_insert
+            # Filtra e deduplica
+            print(f"[DEBUG] 29. Game user to insert: {len(game_user_to_insert)}", flush=True)
+            game_user_to_insert = [
+                g
+                for g in game_user_to_insert
+                if g.get("num_trophies") is not None
+                and g.get("play_count") is not None
+                and g.get("game_id") is not None
+                and g.get("user_id") is not None
+                and g.get("platform") is not None
+            ]
+            print(f"[DEBUG] 29. Filtered game user to insert: {len(game_user_to_insert)}", flush=True)
+            seen_game_user = set()
+            unique_game_user_to_insert = []
+            for g in game_user_to_insert:
+                key = (g["game_id"], g["user_id"], g["platform"])
+                if key not in seen_game_user:
+                    unique_game_user_to_insert.append(g)
+                    seen_game_user.add(key)
+            game_user_to_insert = unique_game_user_to_insert
+            print(f"[DEBUG] 29. Unique game user to insert: {len(game_user_to_insert)}", flush=True)
 
-                try:
-                    if game_user_to_insert:
-                        db["game_user"].insert_many(game_user_to_insert)
-                        logger.info(
-                            f"Inserted {len(game_user_to_insert)} games-user linkages into the database."
-                        )
-                        job_file_handler.flush()
-
-                except errors.BulkWriteError as bwe:
-                    logger.error(f"Bulk write error: {bwe.details}")
+            try:
+                if game_user_to_insert:
+                    db["game_user"].insert_many(game_user_to_insert)
+                    logger.info(
+                        f"Inserted {len(game_user_to_insert)} games-user linkages into the database."
+                    )
                     job_file_handler.flush()
+            except errors.BulkWriteError as bwe:
+                print(f"[DEBUG] 29. Bulk write error: {bwe.details}", flush=True)
+                logger.error(f"Bulk write error: {bwe.details}")
+                job_file_handler.flush()
 
-                    db["schedules"].update_one(
+                db["schedules"].update_one(
                     {"job_string_id": string_job_id},
                     {"$set": {"status": "fail", "error": "Bulk Write Error on Games", "updated_at": datetime.now()}},
                 )
+                return
 
 
             if game_user_to_update:
@@ -499,13 +499,15 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     job_file_handler.flush()
 
                 except errors.BulkWriteError as e:
+                    print(f"[DEBUG] 29. Error updating game-user linkages: {e}", flush=True)
                     logger.error(f"Error updating game-user linkages: {e}")
                     job_file_handler.flush()
 
                     db["schedules"].update_one(
-                    {"job_string_id": string_job_id},
-                    {"$set": {"status": "fail", "error": "Bulk write of game_user failed", "updated_at": datetime.now()}},
-                )
+                        {"job_string_id": string_job_id},
+                        {"$set": {"status": "fail", "error": "Bulk write of game_user failed", "updated_at": datetime.now()}},
+                    )
+                    return
 
 
             # Aggiorna summary
@@ -531,6 +533,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     {"job_string_id": string_job_id},
                     {"$set": {"status": "fail", "error": "Failed updating platform summary", "updated_at": datetime.now()}},
                 )
+                return
 
 
             db["schedules"].update_one(
@@ -541,19 +544,19 @@ async def sync_job(ctx, user_id, platform, string_job_id):
 
 
         except Exception as e:
-            print(f"[DEBUG] Exception in inner try: {e}", flush=True)
             db["schedules"].update_one(
                 {"job_string_id": string_job_id},
                 {"$set": {"status": "fail", "error": str(e), "updated_at": datetime.now()}},
             )
             logger.error(f"Sync failed for user {user_id} on {platform}: {e}")
+            print(f"[DEBUG] 29. Error during sync: {e}", flush=True)
+            return
         finally:
-            print(f"[DEBUG] Cleaning up logger", flush=True)
             logger.removeHandler(job_file_handler)
             job_file_handler.close()
     except Exception as e:
+        print(f"[DEBUG] 2. Error in sync_job: {e}", flush=True)
         logging.error(f"Error in sync_job: {e}")
-        print(f"[DEBUG] Error in sync_job: {e}", flush=True)
         if "job_file_handler" in locals():
             job_file_handler.close()
         raise e

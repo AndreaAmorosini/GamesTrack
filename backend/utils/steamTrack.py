@@ -74,14 +74,12 @@ def sync_steam(steam_api_key, logger=None):
                 listGame.append(str(0))
                 listGame.append(str(0) + "%")
         except Exception as e:
-            # print("No Achievement Data")
+            # print(f"No Achievement Data:{e}", flush=True)
             listGame.append(str(0))
             listGame.append(str(0))
             listGame.append(str(0) + "%")
         listOfList.append(listGame)
         time.sleep(0.5)
-
-    # TODO : organizzare dati in dataFrame
 
     arr = np.array(listOfList)
     df_games_steam = pd.DataFrame(
