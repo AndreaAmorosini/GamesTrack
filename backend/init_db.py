@@ -221,9 +221,23 @@ def init_mongo():
                     {
                         "game_id": "test_game_id",
                         "user_id": user_id,
-                        "platform": platIdTest[0],  # steam
+                        "platform": "steam",  # steam
                         "num_trophies": 3,
                         "play_count": 10,
+                    }
+                )
+            
+            if "game_user_wishlist" not in existing:
+                db.create_collection("game_user_wishlist")
+                db["game_user_wishlist"].create_index(
+                    [("game_id", ASCENDING), ("user_id", ASCENDING), ("platform", ASCENDING)], unique=True
+                )
+
+                db["game_user_wishlist"].insert_one(
+                    {
+                        "game_id": "test_game_id",
+                        "user_id": user_id,
+                        "platform": "steam",
                     }
                 )
 

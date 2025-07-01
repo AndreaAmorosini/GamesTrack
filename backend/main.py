@@ -283,7 +283,7 @@ def get_sync_status(job_id: str, db=Depends(get_db)):
     return {"status": job["status"]}
 
 #Per alcuni di questi filtri sarebbe l'ideale avere dei dropdown con i valori possibili e con la possibilita' di selezionarne piu' di uno e con la possibilita' di cercarne nel dropdown
-@app.get("/games", response_model=list[dict])
+@app.get("/games", response_model=dict)
 def get_all_games(
     db=Depends(get_db),
     name: str = Query(None, description="Filter games by name (case-insensitive)"),
@@ -292,37 +292,155 @@ def get_all_games(
     developer: list[int] = Query(None, description="Filter games by developer"),
     publisher: int = Query(None, description="Filter games by publisher"),
     game_mode: list[int] = Query(None, description="Filter games by game mode (e.g., Single-player, Multiplayer)"),
+    sort_by: str = Query("name", description="Sort games by field (e.g., name, release_date, rating)"),
+    sort_order: str = Query("asc", description="Sort order (asc or desc)"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
-    query = {}
+    match_stage = {}
     
     if name:
-        query["$or"] = [
-            {"name": {"$regex": name, "$options": "i"}},  # Case-insensitive search
-            {"original_name": {"$regex": name, "$options": "i"}},  # Search in original game name
+        match_stage["$or"] = [
+            {"name": {"$regex": name, "$options": "i"}},
+            {"original_name": {"$regex": name, "$options": "i"}},
         ]
 
     if genres:
-        query["genres"] = {"$in": genres}
+        match_stage["genres"] = {"$in": genres}
 
     if platforms:
-        query["platforms"] = {"$in": platforms}
+        match_stage["platforms"] = {"$in": platforms}
 
     if developer:
-        query["developer"] = {"$in": developer} if isinstance(developer, list) else developer
+        match_stage["developer"] = {"$in": developer} if isinstance(developer, list) else developer
 
     if publisher:
-        query["publisher"] = {"$in": publisher} if isinstance(publisher, list) else publisher
+        match_stage["publisher"] = {"$in": publisher} if isinstance(publisher, list) else publisher
 
     if game_mode:
-        query["game_modes"] = {"$in": game_mode}
+        match_stage["game_modes"] = {"$in": game_mode}
         
-    logging.info(f"Querying games with filters: {query}")
+    valid_sort_fields = ["name", "release_date", "total_rating", "total_rating_count"]
+    if sort_by not in valid_sort_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid sort field. Valid fields are: {', '.join(valid_sort_fields)}"
+        )
         
-    games = list(db["games"].find(query))
+    valid_sort_orders = ["asc", "desc"]
+    if sort_order not in valid_sort_orders:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid sort order. Valid orders are: {', '.join(valid_sort_orders)}"
+        )
+        
+    sort_direction = 1 if sort_order == "asc" else -1
+    sort_stage = {sort_by: sort_direction}
+        
+    pipeline = [
+        {"$match": match_stage} if match_stage else {"$match": {}},
+        # Lookup per i generi
+        {
+            "$lookup": {
+                "from": "genres",
+                "localField": "genres",
+                "foreignField": "igdb_id",
+                "as": "genre_details",
+            }
+        },
+        # Lookup per le piattaforme
+        {
+            "$lookup": {
+                "from": "console_platforms",
+                "localField": "platforms",
+                "foreignField": "igdb_id",
+                "as": "platform_details",
+            }
+        },
+        # Lookup per il developer
+        {
+            "$lookup": {
+                "from": "companies",
+                "localField": "developer",
+                "foreignField": "igdb_id",
+                "as": "developer_details",
+            }
+        },
+        # Lookup per il publisher
+        {
+            "$lookup": {
+                "from": "companies",
+                "localField": "publisher",
+                "foreignField": "igdb_id",
+                "as": "publisher_details",
+            }
+        },
+        # Lookup per le modalità di gioco
+        {
+            "$lookup": {
+                "from": "game_modes",
+                "localField": "game_modes",
+                "foreignField": "igdb_id",
+                "as": "game_mode_details",
+            }
+        },
+        # Aggiungi campi computati per i nomi
+        {
+            "$addFields": {
+                "genre_names": "$genre_details.genre_name",
+                "platform_names": "$platform_details.platform_name",
+                "developer_names": "$developer_details.company_name",
+                "publisher_names": "$publisher_details.company_name",
+                "game_mode_names": "$game_mode_details.game_mode_name",
+            },
+        },
+        # Rimuovi i campi di dettaglio se non li vuoi nel risultato finale
+        {
+            "$project": {
+                "genre_details": 0,
+                "platform_details": 0,
+                "developer_details": 0,
+                "publisher_details": 0,
+                "game_mode_details": 0,
+            }
+        },
+        {"$sort": sort_stage},
+        {
+            "$facet": {
+                "games": [{"$skip": (page - 1) * limit}, {"$limit": limit}],
+                "total_count": [{"$count": "count"}],
+            }
+        },
+    ]
+                
+    logging.info(f"Querying games with filters: {match_stage} on page {page} with limit {limit}")
+        
+    result = list(db["games"].aggregate(pipeline))
+    games = result[0]["games"] if result else []
+    total_count = result[0]["total_count"][0]["count"] if result and result[0]["total_count"] else 0
+    
     for game in games:
         game["_id"] = str(game["_id"])
         
-    return games
+    total_pages = (total_count + limit - 1) // limit  # Calcola il numero totale di pagine
+    has_next = page < total_pages
+    has_prev = page > 1
+        
+    return {
+        "games": games,
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "items_per_page": limit,
+            "has_next": has_next,
+            "has_prev": has_prev,
+        },
+        "sorting" : {
+            "sort_by": sort_by,
+            "sort_order": sort_order,
+        }
+    }
 
 @app.get("/companies", response_model=list[dict])
 def get_all_companies(
@@ -397,10 +515,56 @@ def get_all_consoles(
         console["_id"] = str(console["_id"])
     return consoles
 
+@app.post("/wishlist/add")
+def add_to_wishlist(
+    game_id: str,
+    platform: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    try:
+        db["game_user_wishlist"].insert_one(
+            {
+                "user_id": str(current_user.id),
+                "game_id": game_id,
+                "platform": platform,
+            }
+        )
+        return {"message": "Game added to wishlist"}
+    except Exception as e:
+        raise HTTPException(400, e)
 
-#TODO: sync metadata
+
+@app.get("/wishlist")
+def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
+    wishlist = list(
+        db["game_user_wishlist"].aggregate(
+            [
+                {"$match": {"user_id": str(current_user.id)}},
+                {
+                    "$addFields": {
+                        "game_object_id": {"$toObjectId": "$game_id"},
+                    }
+                },
+                {
+                    "$lookup": {
+                        "from": "games",
+                        "localField": "game_object_id",
+                        "foreignField": "_id",
+                        "as": "game_details",
+                    }
+                },
+                {
+                    "$project": {
+                        "game_object_id": 0,
+                    }
+                }
+            ]
+        )
+    )
+    return {"wishlist": wishlist}
+
 #TODO: retrieve game by ID
-#TODO: retrieve games by search term and filters (genere, platform, console,. developer, publisher, game mode)
 #TODO: search game metadata by name
 #TODO: add to wishlist
 #TODO: remove from wishlist
