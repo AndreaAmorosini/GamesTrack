@@ -6,21 +6,13 @@ from pydantic import BaseModel, EmailStr, Field
 from init_db import init_mongo
 import os
 from pymongo import MongoClient, errors, UpdateOne
-from utils.security import hash_password
 from datetime import datetime
 from bson import ObjectId
-from utils.psnTrack import sync_psn
-from utils.steamTrack import sync_steam
-from utils.gameDB import get_metadata
 from utils.igdb_api import IGDBAutoAuthClient
 from utils.db import get_db
 from utils.user_utils import router as user_utils_router
 from utils.user_utils import get_password_hash, verify_password, get_current_active_user
 import logging
-import time
-from fastapi.responses import JSONResponse
-import re
-import string
 from arq import create_pool
 from arq.connections import RedisSettings
 

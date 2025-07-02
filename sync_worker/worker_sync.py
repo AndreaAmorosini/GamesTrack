@@ -15,7 +15,6 @@ from utils.psnTrack import sync_psn
 from utils.steamTrack import sync_steam
 from utils.igdb_api import IGDBAutoAuthClient
 from arq.connections import RedisSettings
-import logging
 from bson import ObjectId
 
 
@@ -389,7 +388,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     print(f"[DEBUG] 29. Game ID: {game_id}, {game_doc['original_name']}, {game_doc['normalized_name']}", flush=True)
                     platform_data = next(
                         (game for game in full_games_dict 
-                        if game["name"] == game_doc["original_name"] or game["title_name"] == game_doc["original_name"] or game["normalized_name"] == game_doc["normalized_name"]), 
+                        if game["name"] == game_doc["original_name"] or (game["title_name"] is not None and game["title_name"] == game_doc["original_name"]) or game["normalized_name"] == game_doc["normalized_name"]), 
                         {}
                     )
                     game_name = (
