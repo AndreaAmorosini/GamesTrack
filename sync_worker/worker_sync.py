@@ -196,9 +196,18 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                         f"Retrieving metadata for game: {game_name} with external ID: {external_id}"
                     )
                     job_file_handler.flush()
-                    metadata = igdb_client.get_game_metadata(
-                        game_name, external_id=external_id
-                    )
+                    try:
+                        metadata = igdb_client.get_game_metadata(
+                            game_name, external_id=external_id
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Error retrieving metadata for game: {game_name} with external ID: {external_id}: {e}"
+                        )
+                        job_file_handler.flush()
+                        metadata = None
+                        time.sleep(5.0)
+                        
                     if metadata is None:
                         logger.warning(
                             f"No metadata found for game: {game_name} with external ID: {external_id}"
@@ -388,7 +397,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     print(f"[DEBUG] 29. Game ID: {game_id}, {game_doc['original_name']}, {game_doc['normalized_name']}", flush=True)
                     platform_data = next(
                         (game for game in full_games_dict 
-                        if game["name"] == game_doc["original_name"] or (game["title_name"] is not None and game["title_name"] == game_doc["original_name"]) or game["normalized_name"] == game_doc["normalized_name"]), 
+                        if game["name"] == game_doc["original_name"] or (platform == "psn" and game["title_name"] == game_doc["original_name"]) or game["normalized_name"] == game_doc["normalized_name"]), 
                         {}
                     )
                     game_name = (
