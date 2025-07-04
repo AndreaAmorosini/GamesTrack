@@ -5,6 +5,7 @@ import string
 import time
 from datetime import datetime
 import re
+import traceback
 
 # Aggiungi la directory corrente al Python path per permettere l'importazione dei moduli utils
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -397,13 +398,31 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     print(f"[DEBUG] 29. Game ID: {game_id}, {game_doc['original_name']}, {game_doc['normalized_name']}", flush=True)
                     platform_data = next(
                         (game for game in full_games_dict 
-                        if game["name"] == game_doc["original_name"] or (platform == "psn" and game["title_name"] == game_doc["original_name"]) or game["normalized_name"] == game_doc["normalized_name"]), 
+                        if game["name"] == game_doc["original_name"] or 
+                        (platform == "psn" and game.get("title_name") == game_doc["original_name"])), 
                         {}
                     )
+    
+                    if platform_data == {}:
+                        # Se non troviamo una corrispondenza diretta, prova con nomi normalizzati
+                        platform_data = next(
+                            (game for game in full_games_dict 
+                            if normalize_name(game.get("name", "")) == game_doc["normalized_name"] or 
+                            normalize_name(game.get("title_name", "")) == game_doc["normalized_name"]), 
+                            {}
+                        )
+
+                    if platform_data == {}:
+                        logger.warning(f"No platform data found for game: {game_doc['original_name']}")
+                        print(f"[DEBUG] 29. No platform data found for game: {game_doc['original_name']}", flush=True)
+                        continue
+                        
+                    print(f"[DEBUG] 29. Platform data: {platform_data}", flush=True)
+                        
                     game_name = (
-                        platform_data["name"]
-                        if platform_data["name"] is not None
-                        else platform_data["title_name"]
+                        platform_data.get("name")
+                        if platform_data.get("name") is not None
+                        else platform_data.get("title_name")
                     )
                     if "™" in game_name or "®" in game_name:
                         game_name = game_name.replace("™", "").replace("®", "").strip()
@@ -557,7 +576,9 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                 {"$set": {"status": "fail", "error": str(e), "updated_at": datetime.now()}},
             )
             logger.error(f"Sync failed for user {user_id} on {platform}: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             print(f"[DEBUG] 29. Error during sync: {e}", flush=True)
+            print(f"[DEBUG] 29. Traceback: {traceback.format_exc()}", flush=True)
             return
         finally:
             logger.removeHandler(job_file_handler)
