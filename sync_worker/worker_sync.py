@@ -395,7 +395,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     game_id = db["games"].find_one(
                         {"normalized_name": game_doc["normalized_name"]}
                     )["_id"]
-                    print(f"[DEBUG] 29. Game ID: {game_id}, {game_doc['original_name']}, {game_doc['normalized_name']}", flush=True)
+                    # print(f"[DEBUG] 29. Game ID: {game_id}, {game_doc['original_name']}, {game_doc['normalized_name']}", flush=True)
                     platform_data = next(
                         (game for game in full_games_dict 
                         if game["name"] == game_doc["original_name"] or 
@@ -414,11 +414,17 @@ async def sync_job(ctx, user_id, platform, string_job_id):
 
                     if platform_data == {}:
                         logger.warning(f"No platform data found for game: {game_doc['original_name']}")
-                        print(f"[DEBUG] 29. No platform data found for game: {game_doc['original_name']}", flush=True)
-                        continue
-                        
-                    print(f"[DEBUG] 29. Platform data: {platform_data}", flush=True)
-                        
+                        # print(f"[DEBUG] 29. No platform data found for game: {game_doc['original_name']}", flush=True)
+                        if game_id is not None:
+                            platform_data = {
+                                "name": game_doc["original_name"],
+                                "title_name": game_doc["original_name"],
+                                "earnedTrophy": 0,
+                                "play_count": 0,
+                            }
+                        else:
+                            continue
+                                                
                     game_name = (
                         platform_data.get("name")
                         if platform_data.get("name") is not None
@@ -460,7 +466,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                         )
 
             # Filtra e deduplica
-            print(f"[DEBUG] 29. Game user to insert: {len(game_user_to_insert)}", flush=True)
+            # print(f"[DEBUG] 29. Game user to insert: {len(game_user_to_insert)}", flush=True)
             game_user_to_insert = [
                 g
                 for g in game_user_to_insert
@@ -470,7 +476,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                 and g.get("user_id") is not None
                 and g.get("platform") is not None
             ]
-            print(f"[DEBUG] 29. Filtered game user to insert: {len(game_user_to_insert)}", flush=True)
+            # print(f"[DEBUG] 29. Filtered game user to insert: {len(game_user_to_insert)}", flush=True)
             seen_game_user = set()
             unique_game_user_to_insert = []
             for g in game_user_to_insert:
@@ -479,7 +485,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     unique_game_user_to_insert.append(g)
                     seen_game_user.add(key)
             game_user_to_insert = unique_game_user_to_insert
-            print(f"[DEBUG] 29. Unique game user to insert: {len(game_user_to_insert)}", flush=True)
+            # print(f"[DEBUG] 29. Unique game user to insert: {len(game_user_to_insert)}", flush=True)
 
             try:
                 if game_user_to_insert:
@@ -564,7 +570,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
 
 
             db["schedules"].update_one(
-                {"job_string_id": string_job_id}, {"$set": {"status": "success"}}
+                {"job_string_id": string_job_id}, {"$set": {"status": "success", "updated_at": datetime.now(), "game_inserted": len(games_to_insert), "game_updated": len(games_to_update), "game_user_inserted": len(game_user_to_insert), "game_user_updated": len(game_user_to_update)}}
             )
             logger.info(f"Sync for user {user_id} on {platform} completed successfully.")
             job_file_handler.flush()

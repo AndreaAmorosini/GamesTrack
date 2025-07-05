@@ -5,6 +5,7 @@ from pymongo.errors import ServerSelectionTimeoutError
 import time
 from utils.igdb_api import IGDBAutoAuthClient
 import logging
+import datetime
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -243,6 +244,26 @@ def init_mongo():
 
             if "schedules" not in existing:
                 db.create_collection("schedules")
+                db["schedules"].create_index(
+                    [("user_id", ASCENDING), ("platform", ASCENDING)],
+                )
+                
+                db["schedules"].insert_one(
+                    {
+                        "job_id": "test_job_id",
+                        "job_string_id": "test_job_string_id",
+                        "user_id": user_id,
+                        "platform": "steam",
+                        "status": "success",  # pending, running, completed, failed
+                        "created_at": datetime.datetime(2025, 7, 4, 16, 19, 57, 898000),
+                        "updated_at": datetime.datetime(2025, 7, 4, 16, 19, 57, 898000),
+                        "error": None,
+                        "game_inserted": 10,  # Number of games inserted
+                        "game_updated": 5,  # Number of games updated
+                        "game_user_inserted": 3,  # Number of games associated
+                        "game_user_updated": 2,  # Number of game-user associations updated
+                    }
+                )
 
             # your init logic here...
             logging.info("MongoDB connected and initialized.")

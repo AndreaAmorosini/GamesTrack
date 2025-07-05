@@ -15,6 +15,7 @@ from utils.user_utils import get_password_hash, verify_password, get_current_act
 import logging
 from arq import create_pool
 from arq.connections import RedisSettings
+import json
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -525,6 +526,34 @@ def add_to_wishlist(
         return {"message": "Game added to wishlist"}
     except Exception as e:
         raise HTTPException(400, e)
+    
+    
+@app.delete("/wishlist/remove")
+def remove_from_wishlist(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """
+    Remove a game from user's wishlist
+    """
+    try:
+        result = db["game_user_wishlist"].delete_one(
+            {"user_id": str(current_user.id), "game_id": game_id}
+        )
+
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Game not found in wishlist")
+
+        return {"message": "Game removed from wishlist"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error removing game from wishlist: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error removing game from wishlist: {str(e)}"
+        )
 
 
 @app.get("/wishlist")
@@ -555,6 +584,291 @@ def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)]
         )
     )
     return {"wishlist": wishlist}
+
+@app.get("/sync_jobs")
+def get_all_sync_by_user(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    status: str = Query(None, description="Filter by status"),
+    platform: str = Query(None, description="Filter by platform"),
+):
+    query = {"user_id": str(current_user.id)}
+    
+    if status:
+        query["status"] = status
+        
+    if platform:
+        query["platform"] = platform
+    
+    jobs = list(db["schedules"].find(query).sort("updated_at", -1))  # Sort by created_at descending
+    
+    for job in jobs:
+        job["_id"] = str(job["_id"])
+        job["created_at"] = job["created_at"].isoformat() if isinstance(job["created_at"], datetime) else job["created_at"]
+        job["updated_at"] = job["updated_at"].isoformat() if isinstance(job["updated_at"], datetime) else job["updated_at"]
+        
+    return {"jobs": jobs}
+
+
+@app.get("/search/igdb", response_model=dict)
+def search_igdb_games(
+    db=Depends(get_db),
+    name: str = Query(None, description="Search games by name"),
+    platform: int = Query(None, description="Filter by platform ID (IGDB platform ID)"),
+    company: int = Query(
+        None, description="Filter by company ID (developer or publisher)"
+    ),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(
+        10, ge=1, le=50, description="Number of items per page (max 50)"
+    ),
+):
+    """
+    Search games from IGDB API with filters for name, platform, and company
+    """
+    try:
+        # Costruisci la query IGDB
+        where_conditions = []
+        where_conditions.append("category = 0")  # Solo giochi, esclude DLC, add-on, ecc.
+
+        # Filtro per nome
+        if name:
+            # Escape special characters per regex
+            escaped_name = name.replace('"', '\\"')
+            where_conditions.append(f'name ~ *"{escaped_name}"*')
+
+        # Filtro per piattaforma
+        if platform:
+            where_conditions.append(f"platforms = [{platform}]")
+
+        # Filtro per azienda (developer o publisher)
+        if company:
+            where_conditions.append(f"(involved_companies.company = {company})")
+
+        # Combina le condizioni
+        where_clause = " & ".join(where_conditions) if where_conditions else ""
+
+        # Calcola offset per paginazione
+        offset = (page - 1) * limit
+
+        # Costruisci la query completa
+        query_parts = [
+            "fields name, summary, storyline, first_release_date,",
+            "total_rating, total_rating_count, aggregated_rating, aggregated_rating_count,",
+            "genres.name, platforms.name, platforms.abbreviation,",
+            "involved_companies.company.name, involved_companies.developer, involved_companies.publisher,",
+            "cover.url, cover.width, cover.height, cover.checksum,",
+            "screenshots.url, screenshots.width, screenshots.height, screenshots.checksum;",
+        ]
+
+        if where_clause:
+            query_parts.append(f"where {where_clause};")
+
+        query_parts.extend(
+            [f"offset {offset};", f"limit {limit};", "sort total_rating_count desc;"]
+        )
+
+        query = " ".join(query_parts)
+
+        logging.info(f"IGDB Search Query: {query}")
+
+        # Esegui la query
+        response = igdb_client.query("games", query)
+        games = json.loads(response) if response else []
+
+        # Processa i risultati
+        processed_games = []
+        for game in games:
+            processed_game = {
+                "igdb_id": game.get("id"),
+                "name": game.get("name", ""),
+                "summary": game.get("summary", ""),
+                "storyline": game.get("storyline", ""),
+                "total_rating": round(game.get("total_rating", 0), 2),
+                "total_rating_count": game.get("total_rating_count", 0),
+                "genres": [genre.get("name") for genre in game.get("genres", [])],
+                "platforms": [
+                    {
+                        "name": platform.get("name"),
+                        "abbreviation": platform.get("abbreviation"),
+                    }
+                    for platform in game.get("platforms", [])
+                ],
+                "companies": [],
+                "cover": None,
+                "screenshots": [],
+            }
+
+            # Processa release date
+            if "first_release_date" in game:
+                try:
+                    release_date = datetime.fromtimestamp(game["first_release_date"])
+                    processed_game["release_date"] = release_date.strftime("%Y-%m-%d")
+                    processed_game["release_year"] = release_date.year
+                except:
+                    processed_game["release_date"] = None
+                    processed_game["release_year"] = None
+            else:
+                processed_game["release_date"] = None
+                processed_game["release_year"] = None
+
+            # Processa aziende
+            involved_companies = game.get("involved_companies", [])
+            developers = []
+            publishers = []
+
+            for company in involved_companies:
+                company_name = company.get("company", {}).get("name", "")
+                if company.get("developer"):
+                    developers.append(company_name)
+                if company.get("publisher"):
+                    publishers.append(company_name)
+
+            processed_game["companies"] = {
+                "developers": developers,
+                "publishers": publishers,
+            }
+
+            # Processa cover
+            if "cover" in game:
+                cover = game["cover"]
+                checksum = cover.get("checksum", "")
+                processed_game["cover"] = {
+                    "url": cover.get("url", ""),
+                    "full_url": f"https://images.igdb.com/igdb/image/upload/t_cover_big/{checksum}.jpg"
+                    if checksum
+                    else "",
+                    "thumb_url": f"https://images.igdb.com/igdb/image/upload/t_thumb/{checksum}.jpg"
+                    if checksum
+                    else "",
+                    "width": cover.get("width"),
+                    "height": cover.get("height"),
+                }
+
+            # Processa screenshots
+            screenshots = game.get("screenshots", [])
+            processed_game["screenshots"] = [
+                {
+                    "url": screenshot.get("url", ""),
+                    "full_url": f"https://images.igdb.com/igdb/image/upload/t_screenshot_big/{screenshot.get('checksum', '')}.jpg",
+                    "thumb_url": f"https://images.igdb.com/igdb/image/upload/t_thumb/{screenshot.get('checksum', '')}.jpg",
+                    "width": screenshot.get("width"),
+                    "height": screenshot.get("height"),
+                }
+                for screenshot in screenshots[:5]  # Limita a 5 screenshot
+            ]
+
+            processed_games.append(processed_game)
+
+        # Informazioni di paginazione (approssimate perché IGDB non fornisce il totale)
+        has_next = (
+            len(games) == limit
+        )  # Se abbiamo ricevuto il numero massimo, probabilmente ci sono altri risultati
+        has_prev = page > 1
+
+        return {
+            "games": processed_games,
+            "pagination": {
+                "current_page": page,
+                "items_per_page": limit,
+                "has_next": has_next,
+                "has_prev": has_prev,
+                "total_returned": len(processed_games),
+            },
+            "search_params": {"name": name, "platform": platform, "company": company},
+        }
+
+    except Exception as e:
+        logging.error(f"Error searching IGDB: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error searching games from IGDB: {str(e)}"
+        )
+
+
+@app.post("/games/add", response_model=dict)
+def add_game_from_igdb(
+    igdb_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """
+    Add a game to the database using IGDB metadata by IGDB ID
+    """
+    try:
+        # Verifica se il gioco esiste già
+        existing_game = db["games"].find_one({"igdb_id": igdb_id})
+        if existing_game:
+            return {
+                "message": "Game already exists in database",
+                "game_id": str(existing_game["_id"]),
+                "igdb_id": igdb_id,
+                "name": existing_game.get("name", ""),
+            }
+
+        # Recupera i metadata da IGDB usando l'ID
+        metadata = igdb_client.get_game_metadata("", igdb_id=igdb_id)
+
+        if not metadata:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Game with IGDB ID {igdb_id} not found or could not be retrieved",
+            )
+
+        # Funzione per normalizzare il nome
+        def normalize_name(name):
+            if not name:
+                return ""
+            import string
+
+            # Remove punctuation
+            name = name.translate(str.maketrans("", "", string.punctuation))
+            # Remove extra spaces and lowercase
+            return " ".join(name.lower().split())
+
+        # Costruisci il documento del gioco usando solo campi esistenti del database
+        game_doc = {
+            "igdb_id": metadata.get("igdb_id"),
+            "name": metadata.get("name", ""),
+            "original_name": metadata.get("name", ""),
+            "normalized_name": normalize_name(metadata.get("name", "")),
+            "platforms": metadata.get("platforms", []),
+            "genres": metadata.get("genres", []),
+            "game_modes": metadata.get("game_modes", []),
+            "release_date": metadata.get("release_date"),
+            "publisher": metadata.get("publisher"),
+            "developer": metadata.get("developer"),
+            "description": metadata.get("description", ""),
+            "cover_image": metadata.get("cover_image", ""),
+            "screenshots": metadata.get("screenshots", []),
+            "artworks": metadata.get("artworks", []),
+            "total_rating": metadata.get("total_rating", 0.0),
+            "total_rating_count": metadata.get("total_rating_count", 0),
+            "steam_game_id": None,  # Sarà popolato durante la sync
+            "psn_game_id": None,  # Sarà popolato durante la sync
+            "toVerify": False,
+        }
+
+        # Inserisci il gioco nel database
+        result = db["games"].insert_one(game_doc)
+
+        logging.info(
+            f"Game added successfully: {game_doc['name']} (IGDB ID: {igdb_id})"
+        )
+
+        return {
+            "message": "Game added successfully",
+            "game_id": str(result.inserted_id),
+            "igdb_id": igdb_id,
+            "name": game_doc["name"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error adding game from IGDB ID {igdb_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error adding game: {str(e)}")
+
+#TODO: maybe let the user manually specifies for which console he has the game? (if from steam its pc, if from psn its ps4/ps5, if only trophy data from psn it is ps3, and then other only manually)
 
 #TODO: retrieve game by ID
 #TODO: search game metadata by name

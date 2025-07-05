@@ -50,8 +50,10 @@ class IGDBAutoAuthClient:
         self._ensure_token_valid()
         return self.query("games", query)
     
-    def get_game_metadata(self, game_name: str, external_id: str = None):
-        if external_id is not None:
+    def get_game_metadata(self, game_name: str, external_id: str = None, igdb_id: int = None):
+        if igdb_id is not None:
+            game_id = igdb_id
+        elif external_id is not None:
             external_game_query = f'''
             fields
             id,
@@ -114,6 +116,7 @@ class IGDBAutoAuthClient:
             where name ~ *"{game_name}"* & category = 0;
             limit 1;
             '''
+        print("[DEBUG] Querying IGDB for game metadata:", query)
         result = self.query_games(query)
         if result is None or result == "[]":
             logger.info(f"No game found for name: {game_name} with external ID: {external_id}")
@@ -239,7 +242,7 @@ class IGDBAutoAuthClient:
         companies = []
         while True:
             query = f'''
-            fields id, name, country;
+            fields id, name, description, country, logo.url;
             limit 500;
             offset {offset};
             '''
@@ -255,7 +258,9 @@ class IGDBAutoAuthClient:
                 comp = {
                     "igdb_id": company["id"],
                     "company_name": company["name"],
-                    "country": country_name
+                    "country": country_name,
+                    "description": company.get("description", ""),
+                    "logo_url": company.get("logo", {}).get("url", "")
                 }
                 companies.append(comp)
             offset += 500
