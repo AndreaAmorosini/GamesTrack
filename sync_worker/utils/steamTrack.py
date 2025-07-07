@@ -8,12 +8,24 @@ import logging
 import sys
 import time
 
-def sync_steam(steam_api_key, logger=None):
+def sync_steam(steam_api_key, steam_id, logger=None):
     if logger is None:
         logger = logging.getLogger()
     steam = Steam(steam_api_key)
-
-    user = steam.users.get_user_details("76561198074617013")
+    
+    user = steam.users.get_user_details(steam_id)
+    
+    if user is None or "player" not in user:
+        logger.error(f"User with Steam ID {steam_id} not found on Steam.")
+        print(f"User with Steam ID {steam_id} not found on Steam.", flush=True)
+        return {
+            "fullGames": [],
+            "gameCount": 0,
+            "earnedTrophyCount": 0,
+            "totTrophyCount": 0,
+            "totPlayTimeCount": 0,
+            "internalError": "User not found"
+        }
 
     logger.info(
         "STEAMID: "

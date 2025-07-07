@@ -40,6 +40,7 @@ class User(BaseModel):
     psn: str | None = None
     psn_api_key: str | None = None
     metadata_api_key: str | None = None  # Placeholder for future API key
+    steam_id: str | None = None  # Placeholder for Steam ID, if needed
 
 
 class Request(BaseModel):
@@ -110,6 +111,7 @@ def register_user(user: User, db=Depends(get_db)):
                 "user_id": user_id,
                 "platform_id": user.steam,
                 "api_key": user.steam_api_key,
+                "steam_id": user.steam_id,
                 "game_count": 0,
                 "earned_achievements": 0,
                 "play_count": 0,
@@ -183,6 +185,7 @@ def update_user(
                         "api_key": update.steam_api_key
                         if update.steam_api_key
                         else link.get("api_key"),
+                        "steam_id": update.steam_id,
                     }
                 },
             )
@@ -192,7 +195,8 @@ def update_user(
                     "platform": "steam",
                     "user_id": str(current_user.id),
                     "platform_id": update.steam,
-                    "api_key": update.steam_api_key,  # Placeholder for future API key
+                    "api_key": update.steam_api_key,
+                    "steam_id": update.steam_id,
                     "game_count": 0,
                     "earned_achievements": 0,
                     "play_count": 0,

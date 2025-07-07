@@ -131,6 +131,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                 return
 
             api_key = link.get("api_key")
+            if platform == "steam":
+                steam_id = link.get("steam_id")
             if api_key is None:
                 db["schedules"].update_one(
                     {"job_string_id": string_job_id},
@@ -141,10 +143,18 @@ async def sync_job(ctx, user_id, platform, string_job_id):
             # Call sync function
             logger.info("Calling Platform API...")
             job_file_handler.flush()
-            stats = sync_psn(api_key, logger=logger) if platform == "psn" else sync_steam(api_key, logger=logger)
+            stats = sync_psn(api_key, logger=logger) if platform == "psn" else sync_steam(api_key, steam_id, logger=logger)
+            
+            if "internalError" in stats:
+                logger.error(f"Error in platform API call: {stats['internalError']}")
+                db["schedules"].update_one(
+                    {"job_string_id": string_job_id},
+                    {"$set": {"status": "fail", "error": stats["internalError"], "updated_at": datetime.now()}},
+                )
+                return
             
             full_games_dict = stats["fullGames"]
-            print(f"[DEBUG] 28. Full games dict: {full_games_dict}", flush=True)
+            #print(f"[DEBUG] 28. Full games dict: {full_games_dict}", flush=True)
 
             existing_game_names = set(
                 g["name"].lower() for g in db["games"].find({}, {"name": 1})
@@ -311,7 +321,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                         }
                     )
                     if not exist:
-                        print("[DEBUG] 29. Game not found in game_user collection, inserting new entry", flush=True)
+                        #print("[DEBUG] 29. Game not found in game_user collection, inserting new entry", flush=True)
                         game_user_to_insert.append(
                             {
                                 "game_id": game_id,
@@ -322,7 +332,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                             },
                         )
                     else:
-                        print("[DEBUG] 29. Game found in game_user collection, updating existing entry", flush=True)
+                        #print("[DEBUG] 29. Game found in game_user collection, updating existing entry", flush=True)
                         game_user_to_update.append(
                             {
                                 "game_id": exist["game_id"],
