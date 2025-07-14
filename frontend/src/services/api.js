@@ -97,7 +97,6 @@ export const updateUserProfile = async (userData) => {
     // Assicuriamoci di inviare solo i campi che il backend si aspetta
     const validFields = {
         email: userData.email,
-        username: userData.username,
         password: userData.password || undefined, // se vuoto, non lo includiamo
         steam: userData.steam || undefined,
         steam_api_key: userData.steam_api_key || undefined,
@@ -130,4 +129,74 @@ export const updateUserProfile = async (userData) => {
     }
 
     return response.json();
+};
+
+export const searchIGDBGames = async (name, platform, company, page, limit) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    const queryParams = new URLSearchParams({
+        ...(name && { name }),
+        ...(platform && { platform: platform }),
+        ...(company && { company: company }),
+        page: page,
+        limit: limit
+    });
+
+    try {
+        const response = await fetch(`${API_URL}/search/igdb?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to search games');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Search games error:', error);
+        throw error;
+    }
+};
+
+export const addGameToLibrary = async (igdbId, platform) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            igdb_id: igdbId,
+            platform: platform
+        });
+
+        const response = await fetch(`${API_URL}/games/add?${queryParams}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            // Gestione specifica per errore di duplicazione
+            if (errorData.detail && errorData.detail.includes('duplicate key error')) {
+                throw new Error('Questo gioco è già nella tua wishlist!');
+            }
+            throw new Error(errorData.detail || 'Failed to add game');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Add game error:', error);
+        throw error;
+    }
 }; 

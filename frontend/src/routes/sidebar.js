@@ -1,11 +1,9 @@
 /**
  * ⚠ These are used just to render the Sidebar!
  * You can include any link here, local or external.
- *
- * If you're looking to actual Router routes, go to
- * `routes/index.js`
  */
-const routes = [
+
+export default [
   {
     path: '/app/dashboard', // the url
     icon: 'HomeIcon', // the component being exported from icons/index.js
@@ -14,7 +12,12 @@ const routes = [
   {
     path: '/app/forms',
     icon: 'FormsIcon',
-    name: 'Forms',
+    name: 'Update Profile',
+  },
+  {
+    path: '/app/game-search',
+    icon: 'GamesIcon',
+    name: 'Cerca Giochi',
   },
   {
     path: '/app/cards',
@@ -41,33 +44,5 @@ const routes = [
     icon: 'TablesIcon',
     name: 'Tables',
   },
-  {
-    icon: 'PagesIcon',
-    name: 'Pages',
-    routes: [
-      // submenu
-      {
-        path: '/login',
-        name: 'Login',
-      },
-      {
-        path: '/create-account',
-        name: 'Create account',
-      },
-      {
-        path: '/forgot-password',
-        name: 'Forgot password',
-      },
-      {
-        path: '/app/404',
-        name: '404',
-      },
-      {
-        path: '/app/blank',
-        name: 'Blank',
-      },
-    ],
-  },
+  
 ]
-
-export default routes

@@ -157,11 +157,15 @@ function Forms() {
               name="username"
               placeholder="Il tuo username"
               value={formData.username}
-              onChange={handleChange}
+              disabled={true}
+              readOnly={true}
               required
               minLength={3}
               maxLength={50}
             />
+            <HelperText>
+              L'username non può essere modificato dopo la registrazione
+            </HelperText>
           </Label>
 
           <Label className="mt-4">
