@@ -329,6 +329,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "platform": platform,
                                 "num_trophies": game.get("earnedTrophy", 0),
                                 "play_count": game.get("play_count", 0),
+                                "console": 6 if platform == "steam" else game.get("console", 9999),
                             },
                         )
                     else:
@@ -340,6 +341,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "platform": exist["platform"],
                                 "num_trophies": game.get("earnedTrophy", 0),
                                 "play_count": game.get("play_count", 0),
+                                "console": 6 if platform == "steam" else game.get("console", 9999),
                             },
                         )
                 time.sleep(1.0)  # API rate limit
@@ -462,6 +464,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "platform": platform,
                                 "num_trophies": platform_data.get("earnedTrophy", 0),
                                 "play_count": platform_data.get("play_count", 0),
+                                "console": 6 if platform == "steam" else platform_data.get("console", 9999),
                             },
                         )
                     else:
@@ -472,6 +475,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "platform": exist["platform"],
                                 "num_trophies": platform_data.get("earnedTrophy", 0),
                                 "play_count": platform_data.get("play_count", 0),
+                                "console": 6 if platform == "steam" else platform_data.get("console", 9999),
                             },
                         )
 

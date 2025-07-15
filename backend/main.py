@@ -515,7 +515,7 @@ def get_all_consoles(
 @app.post("/wishlist/add")
 def add_to_wishlist(
     game_id: str,
-    platform: str,
+    console: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
 ):
@@ -524,7 +524,7 @@ def add_to_wishlist(
             {
                 "user_id": str(current_user.id),
                 "game_id": game_id,
-                "platform": platform,
+                "console": console,
             }
         )
         return {"message": "Game added to wishlist"}
@@ -792,7 +792,7 @@ def search_igdb_games(
 @app.post("/games/add", response_model=dict)
 def add_game_from_igdb(
     igdb_id: int,
-    platform: str,
+    console: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     num_trophies: int = 0,
     play_count: int = 0,
@@ -813,6 +813,7 @@ def add_game_from_igdb(
                     "platform": "other", 
                     "num_trophies": num_trophies,
                     "play_count": play_count,
+                    "console": console,
                 }
             )
             
@@ -881,6 +882,7 @@ def add_game_from_igdb(
                     "platform": "other",
                     "num_trophies": num_trophies,
                     "play_count": play_count,
+                    "console": console,
                 }
             )
 

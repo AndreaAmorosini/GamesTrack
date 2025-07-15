@@ -55,11 +55,18 @@ def sync_psn(npsso, logger=None):
         ids = get_np_communication_id_with_timeout(t.title_id)
         np_communication_id = ids["np_communication_id"]
         product_id = ids["product_id"]
+        console = t.category.name
+        if console == "PS5":
+            console = 167
+        elif console == "PS4":
+            console = 48
+        else:
+            console = 9999
         listGame = [
             t.title_id,
             t.name,
             t.image_url,
-            t.category,
+            console,
             t.play_count,
             t.first_played_date_time,
             t.last_played_date_time,
@@ -145,7 +152,7 @@ def sync_psn(npsso, logger=None):
             "title_id",
             "name",
             "image_url",
-            "category",
+            "console",
             "play_count",
             "first_played_date_time",
             "last_played_date_time",
