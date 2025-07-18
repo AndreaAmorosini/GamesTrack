@@ -907,3 +907,46 @@ def add_game_from_igdb(
 #TODO: add to wishlist
 #TODO: remove from wishlist
 #TODO: force update game metadata
+
+
+# FIX LUIGI
+@app.get("/platforms-users")
+def get_user_platforms_stats(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db)
+):
+    """Get user statistics for all platforms"""
+    try:
+        # Trova tutte le piattaforme collegate all'utente
+        platforms = list(db["platforms-users"].find({"user_id": str(current_user.id)}))
+        
+        # Calcola le statistiche totali
+        total_stats = {
+            "total_games": 0,
+            "total_trophies": 0,
+            "total_play_time": 0,
+            "completed_games": 0
+        }
+        
+        # Aggiungi le statistiche di ogni piattaforma
+        for platform in platforms:
+            total_stats["total_games"] += platform.get("game_count", 0)
+            total_stats["total_trophies"] += platform.get("earned_achievements", 0)
+            total_stats["total_play_time"] += platform.get("play_count", 0)
+            total_stats["completed_games"] += platform.get("full_trophies_count", 0)
+            
+            # Converti ObjectId in stringa per la serializzazione JSON
+            platform["_id"] = str(platform["_id"])
+        
+        return {
+            "platforms": platforms,
+            "total_stats": total_stats
+        }
+        
+    except Exception as e:
+        logging.error(f"Error getting user platforms stats: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving user platforms statistics: {str(e)}"
+        )
+# END FIX LUIGI

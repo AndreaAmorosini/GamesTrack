@@ -1,6 +1,5 @@
 import { lazy } from 'react'
 
-// use lazy for better code splitting, a.k.a. load faster
 const Dashboard = lazy(() => import('../pages/Dashboard'))
 const Forms = lazy(() => import('../pages/Forms'))
 const Cards = lazy(() => import('../pages/Cards'))
@@ -11,16 +10,22 @@ const Tables = lazy(() => import('../pages/Tables'))
 const Page404 = lazy(() => import('../pages/404'))
 const Blank = lazy(() => import('../pages/Blank'))
 const GameSearch = lazy(() => import('../pages/GameSearch'))
+const MyLibrary = lazy(() => import('../pages/MyLibrary'))
 
 /**
  * ⚠ These are internal routes!
- * They will be rendered inside App layout
- * You can add any additional route here
+ * They will be rendered inside App.js, using the default layout
+ * If you want to add a route to, let's say, a landing page, you should add
+ * it to the public routes, exactly the way it was done with the login
  */
 const routes = [
   {
     path: '/dashboard', // the url
     component: Dashboard, // view rendered
+  },
+  {
+    path: '/library',
+    component: MyLibrary,
   },
   {
     path: '/forms',
@@ -55,7 +60,7 @@ const routes = [
     component: Blank,
   },
   {
-    path: '/game-search',
+    path: '/gamesearch',
     component: GameSearch,
   },
 ]

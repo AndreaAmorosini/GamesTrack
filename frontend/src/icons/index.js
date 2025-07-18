@@ -27,6 +27,9 @@ import { ReactComponent as OutlinePersonIcon } from './outlinePerson.svg'
 import { ReactComponent as OutlineCogIcon } from './outlineCog.svg'
 import { ReactComponent as OutlineLogoutIcon } from './outlineLogout.svg'
 import { ReactComponent as GamesIcon } from './games.svg'
+export { ReactComponent as TrophyIcon } from './trophy.svg'
+export { ReactComponent as PlayIcon } from './play.svg'
+export { ReactComponent as StarIcon } from './star.svg'
 
 export {
   ButtonsIcon,

@@ -12,8 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from arq.worker import run_worker
 from pymongo import MongoClient, UpdateOne, errors
-from utils.psnTrack import sync_psn
-from utils.steamTrack import sync_steam
+from utils.psnTrack_fixed import sync_psn                # FIX LUIGI
+from utils.steamTrack_fixed import sync_steam            # FIX LUIGI
 from utils.igdb_api import IGDBAutoAuthClient
 from arq.connections import RedisSettings
 from bson import ObjectId
@@ -132,13 +132,33 @@ async def sync_job(ctx, user_id, platform, string_job_id):
 
             api_key = link.get("api_key")
             if platform == "steam":
-                steam_id = link.get("steam_id")
+                # Per Steam, usa platform_id invece di steam_id
+                steam_id = link.get("platform_id")
+                logger.info(f"Raw Steam ID from DB (platform_id): {steam_id} (type: {type(steam_id)})")
+                if not steam_id:
+                    logger.error(f"No Steam ID found for user {user_id} in platform_id field")
+                    db["schedules"].update_one(
+                        {"job_string_id": string_job_id},
+                        {"$set": {"status": "fail", "error": "No Steam ID configured in platform_id", "updated_at": datetime.now()}},
+                    )
+                    return
+                # Assicurati che steam_id sia una stringa
+                steam_id = str(steam_id)
             if api_key is None:
                 db["schedules"].update_one(
                     {"job_string_id": string_job_id},
                     {"$set": {"status": "fail", "error": "No API key", "updated_at": datetime.now()}},
                 )
                 return
+                
+            # Log delle credenziali per debug
+            logger.info(f"Platform: {platform}")
+            logger.info(f"API Key: {api_key[:10]}..." if api_key else "None")
+            if platform == "steam":
+                logger.info(f"Steam ID (from platform_id): {steam_id}")
+            elif platform == "psn":
+                psn_id = link.get("platform_id")
+                logger.info(f"PSN ID (from platform_id): {psn_id}")
 
             # Call sync function
             logger.info("Calling Platform API...")

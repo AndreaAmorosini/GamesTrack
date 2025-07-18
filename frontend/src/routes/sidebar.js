@@ -15,9 +15,19 @@ export default [
     name: 'Update Profile',
   },
   {
-    path: '/app/game-search',
+    path: '/app/library',
+    icon: 'GamesIcon',
+    name: 'La mia libreria',
+  },
+  {
+    path: '/app/gamesearch',
     icon: 'GamesIcon',
     name: 'Cerca Giochi',
+  },
+  {
+    path: '/app/forms',
+    icon: 'FormsIcon',
+    name: 'Forms',
   },
   {
     path: '/app/cards',
@@ -44,5 +54,4 @@ export default [
     icon: 'TablesIcon',
     name: 'Tables',
   },
-  
 ]
