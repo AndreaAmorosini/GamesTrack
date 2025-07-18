@@ -16,6 +16,8 @@ import logging
 from arq import create_pool
 from arq.connections import RedisSettings
 import json
+from bson import ObjectId
+from fastapi import Query
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -950,3 +952,158 @@ def get_user_platforms_stats(
             detail=f"Error retrieving user platforms statistics: {str(e)}"
         )
 # END FIX LUIGI
+
+
+@app.get("/users/my-library", response_model=dict)
+def get_user_library(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    platform: str = Query(
+        None, description="Filtra per piattaforma (es. 'steam', 'psn')"
+    ),
+    sort_by: str = Query(
+        "name", description="Ordina per: name, total_play_count, total_num_trophies"
+    ),
+    sort_order: str = Query("asc", description="Ordine: asc o desc"),
+    page: int = Query(1, ge=1, description="Numero di pagina"),
+    limit: int = Query(20, ge=1, le=100, description="Elementi per pagina"),
+):
+    #Recupera la libreria di giochi per l'utente corrente 
+    try:
+        user_id = str(current_user.id)
+
+        #Filtro iniziale per utente e, opzionalmente, per piattaforma
+        match_conditions = {"user_id": user_id}
+        if platform:
+            match_conditions["platform"] = platform
+
+        pipeline = [{"$match": match_conditions}]
+
+        #Join con la collezione 'games' per ottenere i dettagli
+        pipeline.extend(
+            [
+                {
+                    "$lookup": {
+                        "from": "games",
+                        "localField": "game_id",
+                        "foreignField": "_id",
+                        "as": "game_details",
+                    }
+                },
+                {"$unwind": "$game_details"},
+            ]
+        )
+
+        #Raggruppamento per gioco per aggregare i dati delle piattaforme
+        pipeline.append(
+            {
+                "$group": {
+                    "_id": "$game_id",
+                    "name": {"$first": "$game_details.name"},
+                    "cover_image": {"$first": "$game_details.cover_image"},
+                    "platforms_data": {
+                        "$push": {
+                            "platform": "$platform",
+                            "play_count": {"$toInt": "$play_count"},
+                            "num_trophies": {"$toInt": "$num_trophies"},
+                        }
+                    },
+                }
+            }
+        )
+
+        #Proiezione per calcolare i totali e formattare l'output
+        pipeline.append(
+            {
+                "$project": {
+                    "_id": 0,
+                    "game_id": {"$toString": "$_id"},
+                    "name": 1,
+                    "cover_image": 1,
+                    "own_platforms": "$platforms_data.platform",
+                    "play_count_by_platform": {
+                        "$arrayToObject": {
+                            "$map": {
+                                "input": "$platforms_data",
+                                "as": "pd",
+                                "in": {"k": "$$pd.platform", "v": "$$pd.play_count"},
+                            }
+                        }
+                    },
+                    "num_trophies_by_platform": {
+                        "$arrayToObject": {
+                            "$map": {
+                                "input": "$platforms_data",
+                                "as": "pd",
+                                "in": {"k": "$$pd.platform", "v": "$$pd.num_trophies"},
+                            }
+                        }
+                    },
+                    "total_play_count": {"$sum": "$platforms_data.play_count"},
+                    "total_num_trophies": {"$sum": "$platforms_data.num_trophies"},
+                }
+            }
+        )
+
+        #Ordinamento
+        valid_sort_fields = ["name", "total_play_count", "total_num_trophies"]
+        if sort_by not in valid_sort_fields:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Campo di ordinamento non valido. Validi: {', '.join(valid_sort_fields)}",
+            )
+
+        sort_direction = -1 if sort_order == "desc" else 1
+        pipeline.append({"$sort": {sort_by: sort_direction}})
+
+        #Paginazione con $facet
+        skip_amount = (page - 1) * limit
+        pipeline.append(
+            {
+                "$facet": {
+                    "library": [{"$skip": skip_amount}, {"$limit": limit}],
+                    "pagination_info": [{"$count": "total_count"}],
+                }
+            }
+        )
+
+        # Esecuzione della pipeline
+        result = list(db["game_user"].aggregate(pipeline))
+
+        # Formattazione della risposta finale
+        if not result or not result[0]["library"]:
+            return {
+                "library": [],
+                "pagination": {
+                    "total_count": 0,
+                    "total_pages": 0,
+                    "current_page": page,
+                    "limit": limit,
+                },
+            }
+
+        library_data = result[0]["library"]
+        total_count = (
+            result[0]["pagination_info"][0]["total_count"]
+            if result[0]["pagination_info"]
+            else 0
+        )
+        total_pages = (total_count + limit - 1) // limit
+
+        return {
+            "library": library_data,
+            "pagination": {
+                "total_count": total_count,
+                "total_pages": total_pages,
+                "current_page": page,
+                "limit": limit,
+            },
+        }
+
+    except Exception as e:
+        logging.error(
+            f"Errore nel recuperare la libreria per l'utente {current_user.id}: {e}"
+        )
+        raise HTTPException(
+            status_code=500, detail="Impossibile recuperare la libreria utente."
+        )
