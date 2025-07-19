@@ -14,8 +14,8 @@ import {
   Input,
   Select,
 } from '@windmill/react-ui'
-import { HeartIcon } from '../icons'
-import { searchIGDBGames } from '../services/api'
+import { HeartIcon, GamesIcon } from '../icons'
+import { searchIGDBGames, addGameToWishlist, addGameToLibrary } from '../services/api'
 
 function GameSearch() {
   // Stati per la ricerca
@@ -29,6 +29,8 @@ function GameSearch() {
   const [totalResults, setTotalResults] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [wishlistLoading, setWishlistLoading] = useState({})
+  const [libraryLoading, setLibraryLoading] = useState({})
   
   const resultsPerPage = 10
 
@@ -61,6 +63,70 @@ function GameSearch() {
   // Gestione cambio pagina
   const onPageChange = (p) => {
     setPage(p)
+  }
+
+  // Funzione per aggiungere un gioco alla wishlist
+  const handleAddToWishlist = async (game) => {
+    try {
+      setWishlistLoading(prev => ({ ...prev, [game.igdb_id]: true }))
+      
+      // Determina la piattaforma principale del gioco
+      let platform = 'manual'
+      if (game.platforms && game.platforms.length > 0) {
+        // Usa l'ID della piattaforma se disponibile, altrimenti usa il nome
+        const platformInfo = game.platforms[0]
+        const platformId = platformInfo.id || platformInfo.name
+        
+        // Mappa degli ID piattaforma IGDB
+        if ([6, 'PC (Microsoft Windows)', 'PC'].includes(platformId)) {
+          platform = 'steam'
+        } else if ([48, 167, 'PlayStation 4', 'PlayStation 5', 'PS4', 'PS5'].includes(platformId)) {
+          platform = 'psn'
+        } else {
+          platform = 'manual'
+        }
+      }
+      
+      await addGameToWishlist(game.igdb_id, platform)
+      alert(`${game.name} aggiunto alla wishlist!`)
+    } catch (err) {
+      console.error('Error adding to wishlist:', err)
+      alert(err.message || 'Errore nell\'aggiunta alla wishlist')
+    } finally {
+      setWishlistLoading(prev => ({ ...prev, [game.igdb_id]: false }))
+    }
+  }
+
+  // Funzione per aggiungere un gioco alla libreria
+  const handleAddToLibrary = async (game) => {
+    try {
+      setLibraryLoading(prev => ({ ...prev, [game.igdb_id]: true }))
+      
+      // Determina la piattaforma principale del gioco
+      let platform = 'manual'
+      if (game.platforms && game.platforms.length > 0) {
+        // Usa l'ID della piattaforma se disponibile, altrimenti usa il nome
+        const platformInfo = game.platforms[0]
+        const platformId = platformInfo.id || platformInfo.name
+        
+        // Mappa degli ID piattaforma IGDB
+        if ([6, 'PC (Microsoft Windows)', 'PC'].includes(platformId)) {
+          platform = 'steam'
+        } else if ([48, 167, 'PlayStation 4', 'PlayStation 5', 'PS4', 'PS5'].includes(platformId)) {
+          platform = 'psn'
+        } else {
+          platform = 'manual'
+        }
+      }
+      
+      await addGameToLibrary(game.igdb_id, platform)
+      alert(`${game.name} aggiunto alla libreria!`)
+    } catch (err) {
+      console.error('Error adding to library:', err)
+      alert(err.message || 'Errore nell\'aggiunta alla libreria')
+    } finally {
+      setLibraryLoading(prev => ({ ...prev, [game.igdb_id]: false }))
+    }
   }
 
   return (
@@ -103,6 +169,12 @@ function GameSearch() {
 
       {/* Tabella Risultati */}
       <TableContainer className="mb-8">
+        <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+          <p className="text-sm text-blue-700 dark:text-blue-300">
+            <strong>💡 Suggerimento:</strong> Usa il pulsante <GamesIcon className="w-4 h-4 inline text-blue-500" /> per aggiungere alla libreria (giochi che possiedi) 
+            e il pulsante <HeartIcon className="w-4 h-4 inline text-red-500" /> per aggiungere alla wishlist (giochi che desideri).
+          </p>
+        </div>
         <Table>
           <TableHeader>
             <tr>
@@ -151,16 +223,36 @@ function GameSearch() {
                   </span>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
+                    <Button 
+                      layout="link" 
+                      size="icon" 
+                      aria-label="Add to Library"
+                      disabled={libraryLoading[game.igdb_id]}
+                      onClick={() => handleAddToLibrary(game)}
+                      className={`${libraryLoading[game.igdb_id] ? 'text-gray-400' : 'text-blue-500 hover:text-blue-700'} transition-colors`}
+                      title="Aggiungi alla libreria"
+                    >
+                      {libraryLoading[game.igdb_id] ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                      ) : (
+                        <GamesIcon className="w-5 h-5" aria-hidden="true" />
+                      )}
+                    </Button>
                     <Button 
                       layout="link" 
                       size="icon" 
                       aria-label="Add to Wishlist"
-                      disabled={true}
-                      className="text-gray-400 cursor-not-allowed"
-                      title="Funzionalità wishlist temporaneamente disabilitata"
+                      disabled={wishlistLoading[game.igdb_id]}
+                      onClick={() => handleAddToWishlist(game)}
+                      className={`${wishlistLoading[game.igdb_id] ? 'text-gray-400' : 'text-red-500 hover:text-red-700'} transition-colors`}
+                      title="Aggiungi alla wishlist"
                     >
-                      <HeartIcon className="w-5 h-5" aria-hidden="true" />
+                      {wishlistLoading[game.igdb_id] ? (
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-500"></div>
+                      ) : (
+                        <HeartIcon className="w-5 h-5" aria-hidden="true" />
+                      )}
                     </Button>
                   </div>
                 </TableCell>

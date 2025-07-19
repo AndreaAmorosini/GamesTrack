@@ -11,6 +11,7 @@ const Page404 = lazy(() => import('../pages/404'))
 const Blank = lazy(() => import('../pages/Blank'))
 const GameSearch = lazy(() => import('../pages/GameSearch'))
 const MyLibrary = lazy(() => import('../pages/MyLibrary'))
+const Wishlist = lazy(() => import('../pages/Wishlist'))
 
 /**
  * ⚠ These are internal routes!
@@ -62,6 +63,10 @@ const routes = [
   {
     path: '/gamesearch',
     component: GameSearch,
+  },
+  {
+    path: '/wishlist',
+    component: Wishlist,
   },
 ]
 

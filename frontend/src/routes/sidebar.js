@@ -25,6 +25,11 @@ export default [
     name: 'Cerca Giochi',
   },
   {
+    path: '/app/wishlist',
+    icon: 'HeartIcon',
+    name: 'Wishlist',
+  },
+  {
     path: '/app/forms',
     icon: 'FormsIcon',
     name: 'Forms',

@@ -562,6 +562,142 @@ def remove_from_wishlist(
         )
 
 
+@app.delete("/users/my-library/remove")
+def remove_from_library(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    platform: str = Query(None, description="Piattaforma specifica da cui rimuovere (opzionale)"),
+):
+    """
+    Remove a game from user's library and update platform statistics
+    """
+    try:
+        # Debug: log dei parametri ricevuti
+        logging.info(f"Attempting to remove game_id: {game_id}, user_id: {current_user.id}, platform: {platform}")
+        
+        # Converti game_id da stringa a ObjectId
+        try:
+            game_object_id = ObjectId(game_id)
+        except Exception as e:
+            logging.error(f"Invalid ObjectId format for game_id: {game_id}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid game_id format: {game_id}"
+            )
+        
+        # Costruisci la query per trovare il gioco
+        find_query = {"user_id": str(current_user.id), "game_id": game_object_id}
+        
+        # Se è specificata una piattaforma, cerca solo in quella piattaforma
+        if platform:
+            find_query["platform"] = platform
+            
+        # Prima leggi i dati del gioco prima di eliminarlo
+        game_record = db["game_user"].find_one(find_query)
+        
+        if not game_record:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Game not found in library{f' for platform {platform}' if platform else ''}"
+            )
+        
+        # Estrai i dati del gioco per aggiornare le statistiche
+        game_platform = game_record.get("platform", "other")
+        game_play_count = game_record.get("play_count", 0)
+        game_num_trophies = game_record.get("num_trophies", 0)
+        
+        # Converti i valori del gioco in interi per sicurezza
+        try:
+            game_play_count = int(game_play_count) if game_play_count is not None else 0
+            game_num_trophies = int(game_num_trophies) if game_num_trophies is not None else 0
+        except (ValueError, TypeError) as e:
+            logging.error(f"Error converting game values to int: {e}")
+            game_play_count = 0
+            game_num_trophies = 0
+        
+        logging.info(f"Game data to subtract - Platform: {game_platform}, Play count: {game_play_count} (type: {type(game_play_count)}), Trophies: {game_num_trophies} (type: {type(game_num_trophies)})")
+        
+        # Elimina il gioco dalla libreria
+        result = db["game_user"].delete_one(find_query)
+        
+        if result.deleted_count == 0:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Game not found in library{f' for platform {platform}' if platform else ''}"
+            )
+        
+        # Aggiorna le statistiche nella collezione platforms-users
+        platform_stats_query = {
+            "user_id": str(current_user.id),
+            "platform": game_platform
+        }
+        
+        # Trova il record delle statistiche della piattaforma
+        platform_stats = db["platforms-users"].find_one(platform_stats_query)
+        
+        if platform_stats:
+            logging.info(f"Platform stats before conversion: {platform_stats}")
+            
+            # Converti i valori in interi per evitare errori di tipo
+            try:
+                current_game_count = int(platform_stats.get("game_count", 0))
+                current_earned_achievements = int(platform_stats.get("earned_achievements", 0))
+                current_play_count = int(platform_stats.get("play_count", 0))
+                
+                logging.info(f"Converted values - game_count: {current_game_count} (type: {type(current_game_count)}), earned_achievements: {current_earned_achievements} (type: {type(current_earned_achievements)}), play_count: {current_play_count} (type: {type(current_play_count)})")
+                
+                # Calcola i nuovi valori sottraendo i dati del gioco eliminato
+                new_game_count = max(0, current_game_count - 1)  # Sottrai 1 gioco
+                new_earned_achievements = max(0, current_earned_achievements - game_num_trophies)
+                new_play_count = max(0, current_play_count - game_play_count)
+                
+                logging.info(f"Calculated new values - game_count: {new_game_count}, earned_achievements: {new_earned_achievements}, play_count: {new_play_count}")
+                
+            except (ValueError, TypeError) as e:
+                logging.error(f"Error converting platform stats to int: {e}")
+                logging.error(f"Platform stats values: game_count={platform_stats.get('game_count')}, earned_achievements={platform_stats.get('earned_achievements')}, play_count={platform_stats.get('play_count')}")
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Error converting platform statistics: {str(e)}"
+                )
+            
+            # Aggiorna le statistiche
+            update_result = db["platforms-users"].update_one(
+                platform_stats_query,
+                {
+                    "$set": {
+                        "game_count": new_game_count,
+                        "earned_achievements": new_earned_achievements,
+                        "play_count": new_play_count
+                    }
+                }
+            )
+            
+            logging.info(f"Updated platform stats - New values: games={new_game_count}, trophies={new_earned_achievements}, play_time={new_play_count}")
+            
+            if update_result.modified_count == 0:
+                logging.warning("No platform stats record was updated")
+        else:
+            logging.warning(f"No platform stats found for user {current_user.id} and platform {game_platform}")
+
+        logging.info(f"Successfully deleted {result.deleted_count} record(s) and updated platform statistics")
+        return {
+            "message": f"Game removed from library{f' for platform {platform}' if platform else ''} and statistics updated"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error removing game from library: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error removing game from library: {str(e)}"
+        )
+
+
+
+
+
 @app.get("/wishlist")
 def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
     wishlist = list(
