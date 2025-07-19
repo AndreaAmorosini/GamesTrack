@@ -516,22 +516,105 @@ def get_all_consoles(
 
 @app.post("/wishlist/add")
 def add_to_wishlist(
-    game_id: str,
+    igdb_id: str,
     console: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
-):
+):    
     try:
-        db["game_user_wishlist"].insert_one(
-            {
-                "user_id": str(current_user.id),
-                "game_id": game_id,
-                "console": console,
+        # Verifica se il gioco esiste già
+        existing_game = db["games"].find_one({"igdb_id": igdb_id})
+        if existing_game:            
+            db["game_user_wishlist"].insert_one(
+                {
+                    "user_id": str(current_user.id),
+                    "game_id": existing_game["_id"],
+                    "console": console,
+                    "platform": "other",  # Assuming "other" for non-specific platforms
+                }
+            )
+
+            
+            return {
+                "message": "Game already exists in database",
+                "game_id": str(existing_game["_id"]),
+                "igdb_id": igdb_id,
+                "name": existing_game.get("name", ""),
             }
-        )
-        return {"message": "Game added to wishlist"}
+        else:
+
+            # Recupera i metadata da IGDB usando l'ID
+            metadata = igdb_client.get_game_metadata("", igdb_id=igdb_id)
+
+            if not metadata:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Game with IGDB ID {igdb_id} not found or could not be retrieved",
+                )
+
+            # Funzione per normalizzare il nome
+            def normalize_name(name):
+                if not name:
+                    return ""
+                import string
+
+                # Remove punctuation
+                name = name.translate(str.maketrans("", "", string.punctuation))
+                # Remove extra spaces and lowercase
+                return " ".join(name.lower().split())
+
+            # Costruisci il documento del gioco usando solo campi esistenti del database
+            game_doc = {
+                "igdb_id": metadata.get("igdb_id"),
+                "name": metadata.get("name", ""),
+                "original_name": metadata.get("name", ""),
+                "normalized_name": normalize_name(metadata.get("name", "")),
+                "platforms": metadata.get("platforms", []),
+                "genres": metadata.get("genres", []),
+                "game_modes": metadata.get("game_modes", []),
+                "release_date": metadata.get("release_date"),
+                "publisher": metadata.get("publisher"),
+                "developer": metadata.get("developer"),
+                "description": metadata.get("description", ""),
+                "cover_image": metadata.get("cover_image", ""),
+                "screenshots": metadata.get("screenshots", []),
+                "artworks": metadata.get("artworks", []),
+                "total_rating": metadata.get("total_rating", 0.0),
+                "total_rating_count": metadata.get("total_rating_count", 0),
+                "steam_game_id": None,  # Sarà popolato durante la sync
+                "psn_game_id": None,  # Sarà popolato durante la sync
+                "toVerify": False,
+            }
+
+            # Inserisci il gioco nel database
+            result = db["games"].insert_one(game_doc)
+
+            logging.info(
+                f"Game added successfully: {game_doc['name']} (IGDB ID: {igdb_id})"
+            )
+                        
+            db["game_user_wishlist"].insert_one(
+                {
+                    "user_id": str(current_user.id),
+                    "game_id": result.inserted_id,
+                    "console": console,
+                    "platform": "other",  # Assuming "other" for non-specific platforms
+                }
+            )
+
+            return {
+                "message": "Game added successfully",
+                "game_id": str(result.inserted_id),
+                "igdb_id": igdb_id,
+                "name": game_doc["name"],
+            }
+
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(400, e)
+        logging.error(f"Error adding game from IGDB ID {igdb_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error adding game: {str(e)}")
+
     
     
 @app.delete("/wishlist/remove")
