@@ -441,11 +441,13 @@ def get_all_games(
         }
     }
 
-@app.get("/companies", response_model=list[dict])
+@app.get("/companies", response_model=dict)
 def get_all_companies(
     db=Depends(get_db),
     name: str = Query(None, description="Filter companies by name (case-insensitive)"),
     country: str = Query(None, description="Filter companies by country (e.g., USA, Japan)"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
     query = {}
     
@@ -453,41 +455,114 @@ def get_all_companies(
         query["company_name"] = {"$regex": name, "$options": "i"}
     if country:
         query["country"] = {"$regex": country, "$options": "i"}
-        
-    companies = list(db["companies"].find(query))
+    
+    # Calcola il numero totale di aziende che corrispondono ai filtri
+    total_count = db["companies"].count_documents(query)
+    
+    # Calcola skip per la paginazione
+    skip = (page - 1) * limit
+    
+    # Recupera le aziende con paginazione
+    companies = list(db["companies"].find(query).skip(skip).limit(limit))
     for company in companies:
         company["_id"] = str(company["_id"])
-    return companies
+    
+    # Calcola informazioni di paginazione
+    total_pages = (total_count + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return {
+        "companies": companies,
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "items_per_page": limit,
+            "has_next": has_next,
+            "has_prev": has_prev,
+        }
+    }
 
-@app.get("/genres", response_model=list[dict])
+@app.get("/genres", response_model=dict)
 def get_all_genres(
     db=Depends(get_db),
     name: str = Query(None, description="Filter genres by name (case-insensitive)"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
     query = {}
 
     if name:
         query["genre_name"] = {"$regex": name, "$options": "i"}
 
-    genres = list(db["genres"].find(query))
+    # Calcola il numero totale di generi che corrispondono ai filtri
+    total_count = db["genres"].count_documents(query)
+    
+    # Calcola skip per la paginazione
+    skip = (page - 1) * limit
+    
+    # Recupera i generi con paginazione
+    genres = list(db["genres"].find(query).skip(skip).limit(limit))
     for genre in genres:
         genre["_id"] = str(genre["_id"])
-    return genres
+    
+    # Calcola informazioni di paginazione
+    total_pages = (total_count + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return {
+        "genres": genres,
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "items_per_page": limit,
+            "has_next": has_next,
+            "has_prev": has_prev,
+        }
+    }
 
-@app.get("/game_modes", response_model=list[dict])
+@app.get("/game_modes", response_model=dict)
 def get_all_game_modes(
     db=Depends(get_db),
     name: str = Query(None, description="Filter game_modes by name (case-insensitive)"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
     query = {}
 
     if name:
         query["game_mode_name"] = {"$regex": name, "$options": "i"}
 
-    game_modes = list(db["game_modes"].find(query))
+    # Calcola il numero totale di modalità che corrispondono ai filtri
+    total_count = db["game_modes"].count_documents(query)
+    
+    # Calcola skip per la paginazione
+    skip = (page - 1) * limit
+    
+    # Recupera le modalità con paginazione
+    game_modes = list(db["game_modes"].find(query).skip(skip).limit(limit))
     for game_mode in game_modes:
         game_mode["_id"] = str(game_mode["_id"])
-    return game_modes
+    
+    # Calcola informazioni di paginazione
+    total_pages = (total_count + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return {
+        "game_modes": game_modes,
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "items_per_page": limit,
+            "has_next": has_next,
+            "has_prev": has_prev,
+        }
+    }
 
 
 @app.get("/consoles", response_model=list[dict])
@@ -816,6 +891,8 @@ def get_all_sync_by_user(
     db=Depends(get_db),
     status: str = Query(None, description="Filter by status"),
     platform: str = Query(None, description="Filter by platform"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
     query = {"user_id": str(current_user.id)}
     
@@ -825,14 +902,27 @@ def get_all_sync_by_user(
     if platform:
         query["platform"] = platform
     
-    jobs = list(db["schedules"].find(query).sort("updated_at", -1))  # Sort by created_at descending
+    # Calcola skip per paginazione
+    skip = (page - 1) * limit
+    
+    # Ottieni il totale dei job per questo utente
+    total_count = db["schedules"].count_documents(query)
+    
+    # Ottieni i job con paginazione
+    jobs = list(db["schedules"].find(query).sort("updated_at", -1).skip(skip).limit(limit))
     
     for job in jobs:
         job["_id"] = str(job["_id"])
         job["created_at"] = job["created_at"].isoformat() if isinstance(job["created_at"], datetime) else job["created_at"]
         job["updated_at"] = job["updated_at"].isoformat() if isinstance(job["updated_at"], datetime) else job["updated_at"]
         
-    return {"jobs": jobs}
+    return {
+        "jobs": jobs,
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit
+    }
 
 
 @app.get("/search/igdb", response_model=dict)
