@@ -109,7 +109,7 @@ function GameSearch() {
       alert(`${game.name} aggiunto alla wishlist!`)
     } catch (err) {
       console.error('Error adding to wishlist:', err)
-      alert(err.message || 'Errore nell\'aggiunta alla wishlist')
+      alert('Gioco già presente nella wishlist')
     } finally {
       setWishlistLoading(prev => ({ ...prev, [game.igdb_id]: false }))
     }
@@ -144,7 +144,7 @@ function GameSearch() {
       alert(`${game.name} aggiunto alla libreria!`)
     } catch (err) {
       console.error('Error adding to library:', err)
-      alert(err.message || 'Errore nell\'aggiunta alla libreria')
+      alert('Gioco già presente nella libreria')
     } finally {
       setLibraryLoading(prev => ({ ...prev, [game.igdb_id]: false }))
     }

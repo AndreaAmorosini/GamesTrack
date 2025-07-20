@@ -1254,6 +1254,18 @@ def add_game_from_igdb(
         # Verifica se il gioco esiste già
         existing_game = db["games"].find_one({"igdb_id": igdb_id})
         if existing_game:
+            # Verifica se il gioco è già nella libreria dell'utente
+            existing_library_item = db["game_user"].find_one({
+                "user_id": str(current_user.id),
+                "game_id": existing_game["_id"]
+            })
+            
+            if existing_library_item:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Game already in library"
+                )
+            
             #Add to game_user
             db["game_user"].insert_one(
                 {
@@ -1267,7 +1279,7 @@ def add_game_from_igdb(
             )
             
             return {
-                "message": "Game already exists in database",
+                "message": "Game added to library",
                 "game_id": str(existing_game["_id"]),
                 "igdb_id": igdb_id,
                 "name": existing_game.get("name", ""),
@@ -1318,7 +1330,22 @@ def add_game_from_igdb(
             }
 
             # Inserisci il gioco nel database
-            result = db["games"].insert_one(game_doc)
+            try:
+                result = db["games"].insert_one(game_doc)
+                game_id = str(result.inserted_id)
+            except Exception as e:
+                # Se fallisce l'inserimento (probabilmente duplicato), cerca il gioco esistente
+                if "duplicate key error" in str(e):
+                    existing_game = db["games"].find_one({"igdb_id": int(igdb_id)})
+                    if existing_game:
+                        game_id = str(existing_game["_id"])
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Error inserting game and could not find existing game"
+                        )
+                else:
+                    raise e
 
             logging.info(
                 f"Game added successfully: {game_doc['name']} (IGDB ID: {igdb_id})"
@@ -1334,7 +1361,6 @@ def add_game_from_igdb(
                     "console": console,
                 }
             )
-
 
             return {
                 "message": "Game added successfully",

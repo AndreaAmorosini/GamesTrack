@@ -186,12 +186,22 @@ export const addGameToLibrary = async (igdbId, console) => {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            // Gestione specifica per errore di duplicazione
-            if (errorData.detail && errorData.detail.includes('duplicate key error')) {
-                throw new Error('Questo gioco è già nella tua wishlist!');
+            let errorMessage = 'Failed to add game';
+            try {
+                const errorData = await response.json();
+                // Gestione specifica per errore di gioco già presente nella libreria
+                if (errorData.detail && errorData.detail.includes('Game already in library')) {
+                    errorMessage = 'Questo gioco è già nella tua libreria!';
+                } else if (errorData.detail && errorData.detail.includes('duplicate key error')) {
+                    errorMessage = 'Questo gioco è già nella tua libreria!';
+                } else if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                }
+            } catch (parseError) {
+                // Se non riesce a parsare la risposta JSON, usa il messaggio di default
+                console.error('Error parsing error response:', parseError);
             }
-            throw new Error(errorData.detail || 'Failed to add game');
+            throw new Error(errorMessage);
         }
 
         return response.json();
@@ -417,12 +427,20 @@ export const addGameToWishlist = async (igdbId, console) => {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            // Gestione specifica per errore di duplicazione
-            if (errorData.detail && errorData.detail.includes('duplicate key error')) {
-                throw new Error('Questo gioco è già nella tua wishlist!');
+            let errorMessage = 'Failed to add game to wishlist';
+            try {
+                const errorData = await response.json();
+                // Gestione specifica per errore di gioco già presente nella wishlist
+                if (errorData.detail && errorData.detail.includes('Game already in wishlist')) {
+                    errorMessage = 'Questo gioco è già nella tua wishlist!';
+                } else if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                }
+            } catch (parseError) {
+                // Se non riesce a parsare la risposta JSON, usa il messaggio di default
+                console.error('Error parsing error response:', parseError);
             }
-            throw new Error(errorData.detail || 'Failed to add game to wishlist');
+            throw new Error(errorMessage);
         }
 
         return response.json();
@@ -574,6 +592,11 @@ export const getSyncJobs = async (params = {}) => {
     try {
         const queryParams = new URLSearchParams();
         
+        // Parametri di paginazione
+        queryParams.append('page', params.page || 1);
+        queryParams.append('limit', params.limit || 20);
+        
+        // Parametri di filtro
         if (params.status) queryParams.append('status', params.status);
         if (params.platform) queryParams.append('platform', params.platform);
 
@@ -606,6 +629,11 @@ export const getCompanies = async (params = {}) => {
     try {
         const queryParams = new URLSearchParams();
         
+        // Parametri di paginazione
+        queryParams.append('page', params.page || 1);
+        queryParams.append('limit', params.limit || 10);
+        
+        // Parametri di filtro
         if (params.name) queryParams.append('name', params.name);
         if (params.country) queryParams.append('country', params.country);
 
@@ -638,6 +666,11 @@ export const getGenres = async (params = {}) => {
     try {
         const queryParams = new URLSearchParams();
         
+        // Parametri di paginazione
+        queryParams.append('page', params.page || 1);
+        queryParams.append('limit', params.limit || 20);
+        
+        // Parametri di filtro
         if (params.name) queryParams.append('name', params.name);
 
         const response = await fetch(`${API_URL}/genres?${queryParams}`, {
@@ -669,6 +702,11 @@ export const getGameModes = async (params = {}) => {
     try {
         const queryParams = new URLSearchParams();
         
+        // Parametri di paginazione
+        queryParams.append('page', params.page || 1);
+        queryParams.append('limit', params.limit || 20);
+        
+        // Parametri di filtro
         if (params.name) queryParams.append('name', params.name);
 
         const response = await fetch(`${API_URL}/game_modes?${queryParams}`, {
