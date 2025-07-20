@@ -12,6 +12,11 @@ const Blank = lazy(() => import('../pages/Blank'))
 const GameSearch = lazy(() => import('../pages/GameSearch'))
 const MyLibrary = lazy(() => import('../pages/MyLibrary'))
 const Wishlist = lazy(() => import('../pages/Wishlist'))
+const GameExplorer = lazy(() => import('../pages/GameExplorer'))
+const SyncJobs = lazy(() => import('../pages/SyncJobs'))
+const Companies = lazy(() => import('../pages/Companies'))
+const Genres = lazy(() => import('../pages/Genres'))
+const GameModes = lazy(() => import('../pages/GameModes'))
 
 /**
  * ⚠ These are internal routes!
@@ -32,6 +37,7 @@ const routes = [
     path: '/forms',
     component: Forms,
   },
+  /*
   {
     path: '/cards',
     component: Cards,
@@ -52,6 +58,7 @@ const routes = [
     path: '/tables',
     component: Tables,
   },
+  */
   {
     path: '/404',
     component: Page404,
@@ -67,6 +74,26 @@ const routes = [
   {
     path: '/wishlist',
     component: Wishlist,
+  },
+  {
+    path: '/gameexplorer',
+    component: GameExplorer,
+  },
+  {
+    path: '/syncjobs',
+    component: SyncJobs,
+  },
+  {
+    path: '/companies',
+    component: Companies,
+  },
+  {
+    path: '/genres',
+    component: Genres,
+  },
+  {
+    path: '/gamemodes',
+    component: GameModes,
   },
 ]
 
