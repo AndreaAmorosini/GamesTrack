@@ -54,6 +54,11 @@ function GameExplorer() {
   // Stati per la modal dei filtri
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
   
+  // Stati per la modal delle immagini
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false)
+  const [selectedGameImages, setSelectedGameImages] = useState([])
+  const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  
   const resultsPerPage = 20
 
   // Carica i dati di riferimento
@@ -231,6 +236,60 @@ function GameExplorer() {
     setPage(1)
   }
 
+  // Funzione per aprire la modal delle immagini
+  const openImageModal = (game) => {
+    const images = []
+    
+    // Aggiungi l'immagine di copertina se disponibile
+    if (game.cover_image) {
+      images.push({ url: game.cover_image, type: 'Copertina' })
+    }
+    
+    // Aggiungi gli screenshots se disponibili
+    if (game.screenshots) {
+      const screenshotUrls = game.screenshots.split(',').filter(url => url.trim())
+      screenshotUrls.forEach(url => {
+        images.push({ url: url.trim(), type: 'Screenshot' })
+      })
+    }
+    
+    // Aggiungi gli artworks se disponibili
+    if (game.artworks) {
+      const artworkUrls = game.artworks.split(',').filter(url => url.trim())
+      artworkUrls.forEach(url => {
+        images.push({ url: url.trim(), type: 'Artwork' })
+      })
+    }
+    
+    if (images.length > 0) {
+      setSelectedGameImages(images)
+      setCurrentImageIndex(0)
+      setIsImageModalOpen(true)
+    } else {
+      alert('Nessuna immagine disponibile per questo gioco')
+    }
+  }
+
+  // Funzione per chiudere la modal delle immagini
+  const closeImageModal = () => {
+    setIsImageModalOpen(false)
+    setSelectedGameImages([])
+    setCurrentImageIndex(0)
+  }
+
+  // Funzione per navigare tra le immagini
+  const nextImage = () => {
+    setCurrentImageIndex((prev) => 
+      prev === selectedGameImages.length - 1 ? 0 : prev + 1
+    )
+  }
+
+  const prevImage = () => {
+    setCurrentImageIndex((prev) => 
+      prev === 0 ? selectedGameImages.length - 1 : prev - 1
+    )
+  }
+
   return (
     <>
       <PageTitle>Esplora Giochi</PageTitle>
@@ -270,7 +329,8 @@ function GameExplorer() {
             >
               <option value="name">Nome</option>
               <option value="release_date">Data di Uscita</option>
-              <option value="rating">Valutazione</option>
+              <option value="total_rating">Valutazione</option>
+              <option value="total_rating_count">Numero Recensioni</option>
             </Select>
           </div>
           
@@ -315,6 +375,10 @@ function GameExplorer() {
               </TableCell>
               <TableCell>Piattaforme</TableCell>
               <TableCell>Generi</TableCell>
+              <TableCell>Publisher</TableCell>
+              <TableCell>Sviluppatore</TableCell>
+              <TableCell>Modalità di Gioco</TableCell>
+              <TableCell>ID Piattaforme</TableCell>
               <TableCell>
                 <Button
                   layout="link"
@@ -330,16 +394,17 @@ function GameExplorer() {
               <TableCell>
                 <Button
                   layout="link"
-                  onClick={() => handleSortChange('rating')}
+                  onClick={() => handleSortChange('total_rating')}
                   className="flex items-center"
                 >
                   Valutazione
-                  {sortBy === 'rating' && (
+                  {sortBy === 'total_rating' && (
                     <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
                   )}
                 </Button>
               </TableCell>
-              <TableCell>Azioni</TableCell>
+              <TableCell>Recensioni</TableCell>
+              <TableCell>Stato</TableCell>
             </tr>
           </TableHeader>
           <TableBody>
@@ -351,18 +416,28 @@ function GameExplorer() {
                       className="hidden w-12 h-12 mr-3 md:block object-cover rounded"
                       src={game.cover_image || 'placeholder-image-url.jpg'}
                       alt={game.name}
+                      onError={(e) => {
+                        e.target.src = 'placeholder-image-url.jpg'
+                      }}
                     />
                     <div>
                       <p className="font-semibold">{game.name}</p>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">
-                        {game.developers?.join(', ')}
-                      </p>
+                      {game.original_name && game.original_name !== game.name && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          {game.original_name}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
-                    {game.platforms?.map((platform, idx) => (
+                    {game.platform_names?.map((platform, idx) => (
+                      <Badge key={idx} type="success">
+                        {platform}
+                      </Badge>
+                    ))}
+                    {!game.platform_names && game.platforms?.map((platform, idx) => (
                       <Badge key={idx} type="success">
                         {platform.abbreviation || platform.name}
                       </Badge>
@@ -371,7 +446,12 @@ function GameExplorer() {
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap gap-1">
-                    {game.genres?.map((genre, idx) => (
+                    {game.genre_names?.map((genre, idx) => (
+                      <Badge key={idx} type="info">
+                        {genre}
+                      </Badge>
+                    ))}
+                    {!game.genre_names && game.genres?.map((genre, idx) => (
                       <Badge key={idx} type="info">
                         {genre.name}
                       </Badge>
@@ -379,47 +459,79 @@ function GameExplorer() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span className="text-sm">
-                    {game.release_date ? new Date(game.release_date).toLocaleDateString() : 'TBA'}
-                  </span>
+                  <div className="text-sm">
+                    {game.publisher_names?.join(', ') || game.publisher || 'N/A'}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="text-sm">
+                    {game.developer_names?.join(', ') || game.developer || 'N/A'}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {game.game_mode_names?.map((mode, idx) => (
+                      <Badge key={idx} type="warning">
+                        {mode}
+                      </Badge>
+                    ))}
+                    {!game.game_mode_names && game.game_modes?.map((mode, idx) => (
+                      <Badge key={idx} type="warning">
+                        {mode.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="text-xs space-y-1">
+                    {game.steam_game_id && (
+                      <div className="text-blue-600 dark:text-blue-400">
+                        Steam: {game.steam_game_id}
+                      </div>
+                    )}
+                    {game.psn_game_id && (
+                      <div className="text-green-600 dark:text-green-400">
+                        PSN: {game.psn_game_id}
+                      </div>
+                    )}
+                    {!game.steam_game_id && !game.psn_game_id && (
+                      <span className="text-gray-400">N/A</span>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <span className="text-sm">
-                    {game.rating ? `${Math.round(game.rating)}%` : 'N/A'}
+                    {game.release_date ? new Date(game.release_date * 1000).toLocaleDateString() : 'TBA'}
                   </span>
                 </TableCell>
                 <TableCell>
-                  <div className="flex items-center space-x-2">
-                    <Button 
-                      layout="link" 
-                      size="icon" 
-                      aria-label="Add to Library"
-                      disabled={libraryLoading[game._id]}
-                      onClick={() => handleAddToLibrary(game)}
-                      className={`${libraryLoading[game._id] ? 'text-gray-400' : 'text-blue-500 hover:text-blue-700'} transition-colors`}
-                      title="Aggiungi alla libreria"
-                    >
-                      {libraryLoading[game._id] ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
-                      ) : (
-                        <GamesIcon className="w-5 h-5" aria-hidden="true" />
-                      )}
-                    </Button>
-                    <Button 
-                      layout="link" 
-                      size="icon" 
-                      aria-label="Add to Wishlist"
-                      disabled={wishlistLoading[game._id]}
-                      onClick={() => handleAddToWishlist(game)}
-                      className={`${wishlistLoading[game._id] ? 'text-gray-400' : 'text-red-500 hover:text-red-700'} transition-colors`}
-                      title="Aggiungi alla wishlist"
-                    >
-                      {wishlistLoading[game._id] ? (
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-500"></div>
-                      ) : (
-                        <HeartIcon className="w-5 h-5" aria-hidden="true" />
-                      )}
-                    </Button>
+                  <div className="text-sm">
+                    {game.total_rating ? (
+                      <div>
+                        <span className="font-semibold">{Math.round(game.total_rating)}%</span>
+                        {game.total_rating_count && (
+                          <div className="text-xs text-gray-500">
+                            {game.total_rating_count} recensioni
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      'N/A'
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <span className="text-sm">
+                    {game.total_rating_count || 0}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <div className="text-sm">
+                    {game.toVerify ? (
+                      <Badge type="warning">Da Verificare</Badge>
+                    ) : (
+                      <Badge type="success">Verificato</Badge>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -541,6 +653,64 @@ function GameExplorer() {
         </ModalBody>
         <ModalFooter>
           <Button layout="outline" onClick={() => setIsFilterModalOpen(false)}>
+            Chiudi
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Modal Immagini */}
+      <Modal isOpen={isImageModalOpen} onClose={closeImageModal} size="large">
+        <ModalHeader>
+          <div className="flex items-center justify-between">
+            <span>Immagini del Gioco</span>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-500">
+                {currentImageIndex + 1} di {selectedGameImages.length}
+              </span>
+            </div>
+          </div>
+        </ModalHeader>
+        <ModalBody>
+          {selectedGameImages.length > 0 && (
+            <div className="relative">
+              <div className="flex justify-center mb-4">
+                <img
+                  src={selectedGameImages[currentImageIndex].url}
+                  alt={`${selectedGameImages[currentImageIndex].type} ${currentImageIndex + 1}`}
+                  className="max-w-full max-h-96 object-contain rounded"
+                  onError={(e) => {
+                    e.target.src = 'placeholder-image-url.jpg'
+                  }}
+                />
+              </div>
+              <div className="text-center mb-4">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {selectedGameImages[currentImageIndex].type}
+                </span>
+              </div>
+              {selectedGameImages.length > 1 && (
+                <div className="flex justify-center space-x-2">
+                  <Button
+                    layout="outline"
+                    size="small"
+                    onClick={prevImage}
+                  >
+                    ← Precedente
+                  </Button>
+                  <Button
+                    layout="outline"
+                    size="small"
+                    onClick={nextImage}
+                  >
+                    Successiva →
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button layout="outline" onClick={closeImageModal}>
             Chiudi
           </Button>
         </ModalFooter>

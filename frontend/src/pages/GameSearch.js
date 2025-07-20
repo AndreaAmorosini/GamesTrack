@@ -15,7 +15,7 @@ import {
   Select,
 } from '@windmill/react-ui'
 import { HeartIcon, GamesIcon } from '../icons'
-import { searchIGDBGames, addGameToWishlist, addGameToLibrary } from '../services/api'
+import { searchIGDBGames, addGameToWishlist, addGameToLibrary, getPlatformMapping } from '../services/api'
 
 function GameSearch() {
   // Stati per la ricerca
@@ -31,8 +31,23 @@ function GameSearch() {
   const [error, setError] = useState('')
   const [wishlistLoading, setWishlistLoading] = useState({})
   const [libraryLoading, setLibraryLoading] = useState({})
+  const [platformMapping, setPlatformMapping] = useState({})
   
   const resultsPerPage = 10
+
+  // Carica il mapping delle piattaforme all'avvio
+  useEffect(() => {
+    const loadPlatformMapping = async () => {
+      try {
+        const data = await getPlatformMapping()
+        setPlatformMapping(data.mapping || {})
+      } catch (err) {
+        console.error('Error loading platform mapping:', err)
+      }
+    }
+    
+    loadPlatformMapping()
+  }, [])
 
   // Effettua la ricerca quando cambiano i parametri
   useEffect(() => {
@@ -70,24 +85,27 @@ function GameSearch() {
     try {
       setWishlistLoading(prev => ({ ...prev, [game.igdb_id]: true }))
       
-      // Determina la piattaforma principale del gioco
-      let platform = 'manual'
+      // Determina la console/piattaforma principale del gioco usando il mapping dinamico
+      let console = 6 // Default a PC
       if (game.platforms && game.platforms.length > 0) {
-        // Usa l'ID della piattaforma se disponibile, altrimenti usa il nome
-        const platformInfo = game.platforms[0]
-        const platformId = platformInfo.id || platformInfo.name
-        
-        // Mappa degli ID piattaforma IGDB
-        if ([6, 'PC (Microsoft Windows)', 'PC'].includes(platformId)) {
-          platform = 'steam'
-        } else if ([48, 167, 'PlayStation 4', 'PlayStation 5', 'PS4', 'PS5'].includes(platformId)) {
-          platform = 'psn'
-        } else {
-          platform = 'manual'
+        // Se platforms è un array di ID numerici
+        if (typeof game.platforms[0] === 'number') {
+          console = game.platforms[0]
+        } else if (game.platforms[0] && typeof game.platforms[0] === 'object') {
+          // Se platforms è un array di oggetti
+          const platformInfo = game.platforms[0]
+          const platformId = platformInfo.igdb_id || platformInfo.id || platformInfo.name
+          
+          // Usa il mapping dinamico invece della logica hardcoded
+          if (platformMapping[platformId] !== undefined) {
+            console = platformMapping[platformId]
+          } else {
+            console = 6 // Default a PC se non trovato nel mapping
+          }
         }
       }
       
-      await addGameToWishlist(game.igdb_id, platform)
+      await addGameToWishlist(game.igdb_id, console)
       alert(`${game.name} aggiunto alla wishlist!`)
     } catch (err) {
       console.error('Error adding to wishlist:', err)
@@ -102,24 +120,27 @@ function GameSearch() {
     try {
       setLibraryLoading(prev => ({ ...prev, [game.igdb_id]: true }))
       
-      // Determina la piattaforma principale del gioco
-      let platform = 'manual'
+      // Determina la console/piattaforma principale del gioco usando il mapping dinamico
+      let console = 6 // Default a PC
       if (game.platforms && game.platforms.length > 0) {
-        // Usa l'ID della piattaforma se disponibile, altrimenti usa il nome
-        const platformInfo = game.platforms[0]
-        const platformId = platformInfo.id || platformInfo.name
-        
-        // Mappa degli ID piattaforma IGDB
-        if ([6, 'PC (Microsoft Windows)', 'PC'].includes(platformId)) {
-          platform = 'steam'
-        } else if ([48, 167, 'PlayStation 4', 'PlayStation 5', 'PS4', 'PS5'].includes(platformId)) {
-          platform = 'psn'
-        } else {
-          platform = 'manual'
+        // Se platforms è un array di ID numerici
+        if (typeof game.platforms[0] === 'number') {
+          console = game.platforms[0]
+        } else if (game.platforms[0] && typeof game.platforms[0] === 'object') {
+          // Se platforms è un array di oggetti
+          const platformInfo = game.platforms[0]
+          const platformId = platformInfo.igdb_id || platformInfo.id || platformInfo.name
+          
+          // Usa il mapping dinamico invece della logica hardcoded
+          if (platformMapping[platformId] !== undefined) {
+            console = platformMapping[platformId]
+          } else {
+            console = 6 // Default a PC se non trovato nel mapping
+          }
         }
       }
       
-      await addGameToLibrary(game.igdb_id, platform)
+      await addGameToLibrary(game.igdb_id, console)
       alert(`${game.name} aggiunto alla libreria!`)
     } catch (err) {
       console.error('Error adding to library:', err)

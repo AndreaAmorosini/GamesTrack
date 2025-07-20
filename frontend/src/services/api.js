@@ -404,7 +404,7 @@ export const addGameToWishlist = async (igdbId, console) => {
 
     try {
         const queryParams = new URLSearchParams({
-            game_id: igdbId,
+            igdb_id: igdbId,
             console: console
         });
 
@@ -495,6 +495,33 @@ export const getConsoles = async () => {
     }
 };
 
+// Funzione per ottenere il mapping delle piattaforme
+export const getPlatformMapping = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/platforms/mapping`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch platform mapping');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get platform mapping error:', error);
+        throw error;
+    }
+};
+
 // Funzione per ottenere tutti i giochi dal database
 export const getAllGames = async (params = {}) => {
     const token = localStorage.getItem('token');
@@ -510,33 +537,13 @@ export const getAllGames = async (params = {}) => {
             sort_order: params.sort_order || 'asc'
         });
 
-        // Aggiungi i filtri se presenti e non vuoti
-        if (params.name && params.name.trim()) queryParams.append('name', params.name);
-        if (params.genres && Array.isArray(params.genres) && params.genres.length > 0) {
-            const validGenres = params.genres.filter(g => g && g.toString().trim());
-            if (validGenres.length > 0) {
-                queryParams.append('genres', validGenres.join(','));
-            }
-        }
-        if (params.platforms && Array.isArray(params.platforms) && params.platforms.length > 0) {
-            const validPlatforms = params.platforms.filter(p => p && p.toString().trim());
-            if (validPlatforms.length > 0) {
-                queryParams.append('platforms', validPlatforms.join(','));
-            }
-        }
-        if (params.developer && Array.isArray(params.developer) && params.developer.length > 0) {
-            const validDevelopers = params.developer.filter(d => d && d.toString().trim());
-            if (validDevelopers.length > 0) {
-                queryParams.append('developer', validDevelopers.join(','));
-            }
-        }
-        if (params.publisher && params.publisher.trim()) queryParams.append('publisher', params.publisher);
-        if (params.game_mode && Array.isArray(params.game_mode) && params.game_mode.length > 0) {
-            const validGameModes = params.game_mode.filter(gm => gm && gm.toString().trim());
-            if (validGameModes.length > 0) {
-                queryParams.append('game_mode', validGameModes.join(','));
-            }
-        }
+        // Aggiungi i filtri se presenti
+        if (params.name) queryParams.append('name', params.name);
+        if (params.genres) queryParams.append('genres', params.genres.join(','));
+        if (params.platforms) queryParams.append('platforms', params.platforms.join(','));
+        if (params.developer) queryParams.append('developer', params.developer.join(','));
+        if (params.publisher) queryParams.append('publisher', params.publisher);
+        if (params.game_mode) queryParams.append('game_mode', params.game_mode.join(','));
 
         const response = await fetch(`${API_URL}/games?${queryParams}`, {
             headers: {
@@ -565,10 +572,7 @@ export const getSyncJobs = async (params = {}) => {
     }
 
     try {
-        const queryParams = new URLSearchParams({
-            page: params.page || 1,
-            limit: params.limit || 20
-        });
+        const queryParams = new URLSearchParams();
         
         if (params.status) queryParams.append('status', params.status);
         if (params.platform) queryParams.append('platform', params.platform);
@@ -600,13 +604,10 @@ export const getCompanies = async (params = {}) => {
     }
 
     try {
-        const queryParams = new URLSearchParams({
-            page: params.page || 1,
-            limit: params.limit || 10
-        });
+        const queryParams = new URLSearchParams();
         
-        if (params.name && params.name.trim()) queryParams.append('name', params.name);
-        if (params.country && params.country.trim()) queryParams.append('country', params.country);
+        if (params.name) queryParams.append('name', params.name);
+        if (params.country) queryParams.append('country', params.country);
 
         const response = await fetch(`${API_URL}/companies?${queryParams}`, {
             headers: {
@@ -635,12 +636,9 @@ export const getGenres = async (params = {}) => {
     }
 
     try {
-        const queryParams = new URLSearchParams({
-            page: params.page || 1,
-            limit: params.limit || 20
-        });
+        const queryParams = new URLSearchParams();
         
-        if (params.name && params.name.trim()) queryParams.append('name', params.name);
+        if (params.name) queryParams.append('name', params.name);
 
         const response = await fetch(`${API_URL}/genres?${queryParams}`, {
             headers: {
@@ -669,12 +667,9 @@ export const getGameModes = async (params = {}) => {
     }
 
     try {
-        const queryParams = new URLSearchParams({
-            page: params.page || 1,
-            limit: params.limit || 20
-        });
+        const queryParams = new URLSearchParams();
         
-        if (params.name && params.name.trim()) queryParams.append('name', params.name);
+        if (params.name) queryParams.append('name', params.name);
 
         const response = await fetch(`${API_URL}/game_modes?${queryParams}`, {
             headers: {

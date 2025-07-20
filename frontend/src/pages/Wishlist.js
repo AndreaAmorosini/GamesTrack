@@ -50,9 +50,10 @@ const Wishlist = () => {
             }
 
             const data = await getUserWishlist(params);
-            setWishlist(data.games || []);
+            // Il backend restituisce { wishlist: [...] } invece di { games: [...] }
+            setWishlist(data.wishlist || data.games || []);
             setTotalPages(data.total_pages || 1);
-            setTotalGames(data.total_games || 0);
+            setTotalGames(data.total_games || data.wishlist?.length || 0);
         } catch (err) {
             console.error('Error fetching wishlist:', err);
             setError(err.message || 'Errore nel caricamento della wishlist');
@@ -69,9 +70,9 @@ const Wishlist = () => {
         if (!gameToDelete) return;
 
         try {
-            setDeleteLoading(gameToDelete.wishlist_id || gameToDelete._id);
-            // Passa l'IGDB ID invece dell'ObjectId
-            await removeGameFromWishlist(gameToDelete.igdb_id || gameToDelete.game_details?.igdb_id, gameToDelete.platform);
+            setDeleteLoading(gameToDelete._id);
+            // Passa il game_id (che ora è sempre una stringa)
+            await removeGameFromWishlist(gameToDelete.game_id, gameToDelete.platform);
             
             alert('Gioco rimosso dalla wishlist con successo!');
             setShowDeleteModal(false);
@@ -268,26 +269,38 @@ const Wishlist = () => {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {wishlist.map((game) => (
-                            <Card key={game._id} className="hover:shadow-lg transition-shadow duration-200">
-                                <CardBody>
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div>
-                                            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                                                {game.name}
-                                            </h3>
-                                            <div className="flex items-center mt-2">
-                                                <Badge type={getPlatformType(game.platform)}>
-                                                    {getPlatformIcon(game.platform)} {game.platform || 'N/A'}
-                                                </Badge>
+                        {wishlist.map((wishlistItem) => {
+                            // Estrai i dettagli del gioco dal game_details
+                            const gameDetails = wishlistItem.game_details?.[0] || {};
+                            const game = {
+                                ...wishlistItem,
+                                name: gameDetails.name || wishlistItem.name,
+                                rating: gameDetails.total_rating,
+                                release_date: gameDetails.release_date,
+                                summary: gameDetails.description,
+                                cover_url: gameDetails.cover_image ? `https:${gameDetails.cover_image}` : null
+                            };
+                            
+                            return (
+                                <Card key={wishlistItem._id} className="hover:shadow-lg transition-shadow duration-200">
+                                    <CardBody>
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div>
+                                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                                                    {game.name}
+                                                </h3>
+                                                <div className="flex items-center mt-2">
+                                                    <Badge type={getPlatformType(wishlistItem.platform)}>
+                                                        {getPlatformIcon(wishlistItem.platform)} {wishlistItem.platform || 'N/A'}
+                                                    </Badge>
+                                                </div>
                                             </div>
-                                        </div>
                                         <Button
-                                            onClick={() => confirmDelete(game)}
-                                            disabled={deleteLoading === (game.wishlist_id || game._id)}
+                                            onClick={() => confirmDelete(wishlistItem)}
+                                            disabled={deleteLoading === (wishlistItem.wishlist_id || wishlistItem._id)}
                                             className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
                                         >
-                                            {deleteLoading === (game.wishlist_id || game._id) ? (
+                                            {deleteLoading === (wishlistItem.wishlist_id || wishlistItem._id) ? (
                                                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
                                             ) : (
                                                 <TrashIcon className="h-4 w-4" />
@@ -333,7 +346,8 @@ const Wishlist = () => {
                                     </div>
                                 </CardBody>
                             </Card>
-                        ))}
+                        );
+                        })}
                     </div>
                 )}
 
