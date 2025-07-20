@@ -31,6 +31,18 @@ export { ReactComponent as TrophyIcon } from './trophy.svg'
 export { ReactComponent as PlayIcon } from './play.svg'
 export { ReactComponent as StarIcon } from './star.svg'
 
+// Alias temporanei per evitare problemi con il parser SVG
+const BuildingIcon = HomeIcon
+const TagIcon = SearchIcon
+const UsersIcon = PeopleIcon
+const SyncIcon = BellIcon
+const CheckIcon = HeartIcon
+const XIcon = ForbiddenIcon
+const ClockIcon = BellIcon
+const GlobeIcon = HomeIcon
+const GamepadIcon = GamesIcon
+const FilterIcon = SearchIcon
+
 export {
   ButtonsIcon,
   CardsIcon,
@@ -61,4 +73,14 @@ export {
   OutlineCogIcon,
   OutlineLogoutIcon,
   GamesIcon,
+  BuildingIcon,
+  TagIcon,
+  UsersIcon,
+  SyncIcon,
+  CheckIcon,
+  XIcon,
+  ClockIcon,
+  GlobeIcon,
+  GamepadIcon,
+  FilterIcon,
 }

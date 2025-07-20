@@ -13,11 +13,17 @@ import {
   Button,
   Pagination,
   Select,
+  Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
 } from '@windmill/react-ui'
-import { TrashIcon, EditIcon } from '../icons'
+import { TrashIcon } from '../icons'
 import InfoCard from '../components/Cards/InfoCard'
 import RoundIcon from '../components/RoundIcon'
 import { GamesIcon, TrophyIcon, PlayIcon, StarIcon } from '../icons'
+import { getUserLibrary, getUserPlatformStats, syncPlatform, removeGameFromLibrary, checkSyncStatus } from '../services/api'
+
 
 function MyLibrary() {
   // Stati per i giochi
@@ -32,6 +38,15 @@ function MyLibrary() {
   const [sortBy, setSortBy] = useState('name')
   const [sortOrder, setSortOrder] = useState('asc')
   
+  // Stati per le modal
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [selectedGame, setSelectedGame] = useState(null)
+  
+  // Stati per loading e sincronizzazione
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [syncStatus, setSyncStatus] = useState('')
+  const [syncJobId, setSyncJobId] = useState(null)
+  
   // Statistiche
   const [stats, setStats] = useState({
     totalGames: 0,
@@ -42,54 +57,51 @@ function MyLibrary() {
 
   const resultsPerPage = 10
 
+  // Funzione per caricare i giochi
+  const fetchGames = async () => {
+    setIsLoading(true)
+    setError('')
+    try {
+      // Usa la funzione API per ottenere la libreria utente
+      const data = await getUserLibrary({
+        page,
+        limit: resultsPerPage,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        platform: selectedPlatform || undefined
+      })
+      
+      // Assicurati che library sia sempre un array
+      setGames(Array.isArray(data.library) ? data.library : [])
+      setTotalResults(data.pagination?.total_count || 0)
+      
+      // Aggiorna le statistiche
+      try {
+        const platformStats = await getUserPlatformStats()
+        
+        // Usa la struttura corretta delle statistiche
+        const totalStats = platformStats.total_stats || {}
+        
+        setStats({
+          totalGames: totalStats.total_games || 0,
+          totalTrophies: totalStats.total_trophies || 0,
+          totalPlayTime: totalStats.total_play_time || 0,
+          completedGames: totalStats.completed_games || 0
+        })
+      } catch (statsError) {
+        console.error('Errore nel caricamento delle statistiche:', statsError)
+        // Mantieni le statistiche di default in caso di errore
+      }
+    } catch (err) {
+      setError('Errore durante il caricamento dei giochi: ' + err.message)
+      console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   // Carica i giochi quando cambiano i filtri
   useEffect(() => {
-    const fetchGames = async () => {
-      setIsLoading(true)
-      setError('')
-      try {
-        const response = await fetch(`/api/games?page=${page}&limit=${resultsPerPage}&sort_by=${sortBy}&sort_order=${sortOrder}${selectedPlatform ? `&platforms=${selectedPlatform}` : ''}`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        })
-        
-        if (!response.ok) throw new Error('Errore nel caricamento dei giochi')
-        
-        const data = await response.json()
-        // Assicurati che games sia sempre un array
-        setGames(Array.isArray(data.games) ? data.games : [])
-        setTotalResults(data.pagination?.total_count || 0)
-        
-        // Aggiorna le statistiche
-        try {
-          const platformStats = await fetch('/api/platforms-users', {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token')}`
-            }
-          }).then(res => res.json())
-          
-          // Accedi all'array platforms dalla risposta con controllo di sicurezza
-          const platforms = Array.isArray(platformStats.platforms) ? platformStats.platforms : []
-          
-          setStats({
-            totalGames: platforms.reduce((acc, p) => acc + (p.game_count || 0), 0),
-            totalTrophies: platforms.reduce((acc, p) => acc + (p.earned_achievements || 0), 0),
-            totalPlayTime: platforms.reduce((acc, p) => acc + (p.play_count || 0), 0),
-            completedGames: platforms.reduce((acc, p) => acc + (p.full_trophies_count || 0), 0)
-          })
-        } catch (statsError) {
-          console.error('Errore nel caricamento delle statistiche:', statsError)
-          // Mantieni le statistiche di default in caso di errore
-        }
-      } catch (err) {
-        setError('Errore durante il caricamento dei giochi: ' + err.message)
-        console.error(err)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
     fetchGames()
   }, [page, selectedPlatform, sortBy, sortOrder])
 
@@ -98,29 +110,121 @@ function MyLibrary() {
     setPage(p)
   }
 
-  // Sincronizza con una piattaforma
-  const syncPlatform = async (platform) => {
+  // Funzione per controllare lo stato della sincronizzazione
+  const checkSyncStatusLocal = async (jobId) => {
     try {
-      const response = await fetch(`/api/sync/${platform}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
+      const data = await checkSyncStatus(jobId)
+      return data.status
+    } catch (error) {
+      console.error('Errore nel controllo dello stato di sincronizzazione:', error)
+      return 'error'
+    }
+  }
+
+  // Funzione per monitorare la sincronizzazione
+  const monitorSync = async (jobId) => {
+    const maxAttempts = 60 // 5 minuti (5 secondi * 60)
+    let attempts = 0
+    
+    const checkStatus = async () => {
+      attempts++
+      const status = await checkSyncStatusLocal(jobId)
       
-      if (!response.ok) throw new Error(`Errore nella sincronizzazione con ${platform}`)
+      if (status === 'completed' || status === 'success') {
+        setSyncStatus('Sincronizzazione completata! Nota: Se non vedi achievement/trofei, verifica che il tuo profilo Steam sia pubblico.')
+        setIsSyncing(false)
+        setSyncJobId(null)
+        // Ricarica i dati
+        await fetchGames()
+        setTimeout(() => setSyncStatus(''), 5000) // Nascondi messaggio dopo 5 secondi
+        return
+      } else if (status === 'failed' || status === 'error') {
+        setSyncStatus('Errore durante la sincronizzazione')
+        setIsSyncing(false)
+        setSyncJobId(null)
+        setTimeout(() => setSyncStatus(''), 5000) // Nascondi messaggio dopo 5 secondi
+        return
+      } else if (attempts >= maxAttempts) {
+        setSyncStatus('Timeout: la sincronizzazione sta impiegando troppo tempo')
+        setIsSyncing(false)
+        setSyncJobId(null)
+        setTimeout(() => setSyncStatus(''), 5000)
+        return
+      }
       
-      const data = await response.json()
-      // Mostra un messaggio di successo
-      alert(`Sincronizzazione con ${platform} avviata! Job ID: ${data.job_id}`)
+      // Continua a controllare ogni 5 secondi
+      setTimeout(checkStatus, 5000)
+    }
+    
+    checkStatus()
+  }
+
+  // Sincronizza con una piattaforma
+  const handleSyncPlatform = async (platform) => {
+    try {
+      setIsSyncing(true)
+      setSyncStatus(`Avvio sincronizzazione con ${platform}...`)
+      
+      const data = await syncPlatform(platform)
+      setSyncJobId(data.job_id)
+      setSyncStatus(`Sincronizzazione avviata! Job ID: ${data.job_id}`)
+      
+      // Inizia il monitoraggio
+      monitorSync(data.job_id)
+      
     } catch (err) {
       setError(`Errore durante la sincronizzazione con ${platform}: ${err.message}`)
+      setIsSyncing(false)
+      setSyncStatus('')
+    }
+  }
+
+  // Gestione eliminazione gioco
+  const handleDeleteGame = (game) => {
+    setSelectedGame(game)
+    setIsDeleteModalOpen(true)
+  }
+
+  // Gestione conferma eliminazione
+  const handleConfirmDelete = async () => {
+    if (!selectedGame) return
+
+    try {
+      await removeGameFromLibrary(selectedGame.game_id)
+      
+      // Ricarica i giochi per mostrare le modifiche
+      await fetchGames()
+      
+      setIsDeleteModalOpen(false)
+      setSelectedGame(null)
+      
+      alert('Gioco rimosso dalla libreria!')
+    } catch (err) {
+      setError('Errore durante la rimozione del gioco: ' + err.message)
     }
   }
 
   return (
     <>
       <PageTitle>La Mia Libreria</PageTitle>
+
+      {/* Messaggio di stato sincronizzazione */}
+      {syncStatus && (
+        <div className={`mb-4 p-4 rounded-lg ${
+          syncStatus.includes('completata') 
+            ? 'bg-green-100 border border-green-400 text-green-700' 
+            : syncStatus.includes('Errore') || syncStatus.includes('Timeout')
+            ? 'bg-red-100 border border-red-400 text-red-700'
+            : 'bg-blue-100 border border-blue-400 text-blue-700'
+        }`}>
+          <div className="flex items-center">
+            {isSyncing && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
+            )}
+            <span>{syncStatus}</span>
+          </div>
+        </div>
+      )}
 
       {/* Cards statistiche */}
       <div className="grid gap-6 mb-8 md:grid-cols-2 xl:grid-cols-4">
@@ -170,9 +274,8 @@ function MyLibrary() {
             value={selectedPlatform}
           >
             <option value="">Tutte le piattaforme</option>
-            <option value="6">PC (Steam)</option>
-            <option value="48">PlayStation 4</option>
-            <option value="167">PlayStation 5</option>
+            <option value="steam">Steam</option>
+            <option value="psn">PlayStation Network</option>
           </Select>
 
           <Select
@@ -181,8 +284,8 @@ function MyLibrary() {
             value={sortBy}
           >
             <option value="name">Nome</option>
-            <option value="release_date">Data di uscita</option>
-            <option value="total_rating">Valutazione</option>
+            <option value="total_play_count">Ore giocate</option>
+            <option value="total_num_trophies">Trofei/Achievement</option>
           </Select>
 
           <Select
@@ -196,11 +299,33 @@ function MyLibrary() {
         </div>
 
         <div className="flex gap-4 mt-4 md:mt-0">
-          <Button onClick={() => syncPlatform('steam')}>
-            Sincronizza Steam
+          <Button 
+            onClick={() => handleSyncPlatform('steam')}
+            disabled={isSyncing}
+            className={isSyncing ? 'opacity-50 cursor-not-allowed' : ''}
+          >
+            {isSyncing && syncJobId ? (
+              <div className="flex items-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Sincronizzando...
+              </div>
+            ) : (
+              'Sincronizza Steam'
+            )}
           </Button>
-          <Button onClick={() => syncPlatform('psn')}>
-            Sincronizza PSN
+          <Button 
+            onClick={() => handleSyncPlatform('psn')}
+            disabled={isSyncing}
+            className={isSyncing ? 'opacity-50 cursor-not-allowed' : ''}
+          >
+            {isSyncing && syncJobId ? (
+              <div className="flex items-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                Sincronizzando...
+              </div>
+            ) : (
+              'Sincronizza PSN'
+            )}
           </Button>
         </div>
       </div>
@@ -217,17 +342,16 @@ function MyLibrary() {
           <TableHeader>
             <tr>
               <TableCell>Gioco</TableCell>
-              <TableCell>Piattaforma</TableCell>
+              <TableCell>Piattaforme</TableCell>
               <TableCell>Trofei/Achievement</TableCell>
               <TableCell>Ore Giocate</TableCell>
-              <TableCell>Stato</TableCell>
               <TableCell>Azioni</TableCell>
             </tr>
           </TableHeader>
           <TableBody>
             {games.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8">
+                <TableCell colSpan={5} className="text-center py-8">
                   <div className="text-gray-500 dark:text-gray-400">
                     {isLoading ? (
                       <p>Caricamento giochi...</p>
@@ -254,38 +378,32 @@ function MyLibrary() {
                       )}
                       <div>
                         <p className="font-semibold">{game.name}</p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">
-                          {game.developer_names?.[0]}
-                        </p>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">
-                      {game.platform_names?.join(', ')}
+                      {Array.isArray(game.own_platforms) ? game.own_platforms.join(', ') : 'N/A'}
                     </span>
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">
-                      {game.num_trophies || 0}
+                      {game.total_num_trophies || 0}
                     </span>
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">
-                      {game.play_count || 0}h
+                      {game.total_play_count || 0}h
                     </span>
-                  </TableCell>
-                  <TableCell>
-                    <Badge type={game.full_trophies_count ? 'success' : 'warning'}>
-                      {game.full_trophies_count ? 'Completato' : 'In corso'}
-                    </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center space-x-4">
-                      <Button layout="link" size="icon" aria-label="Edit">
-                        <EditIcon className="w-5 h-5" aria-hidden="true" />
-                      </Button>
-                      <Button layout="link" size="icon" aria-label="Delete">
+                      <Button 
+                        layout="link" 
+                        size="icon" 
+                        aria-label="Delete"
+                        onClick={() => handleDeleteGame(game)}
+                      >
                         <TrashIcon className="w-5 h-5" aria-hidden="true" />
                       </Button>
                     </div>
@@ -304,6 +422,41 @@ function MyLibrary() {
           />
         </TableFooter>
       </TableContainer>
+
+      {/* Modal per confermare eliminazione */}
+      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)}>
+        <ModalHeader>Conferma Eliminazione</ModalHeader>
+        <ModalBody>
+          {selectedGame && (
+            <p>
+              Sei sicuro di voler rimuovere <strong>{selectedGame.name}</strong> dalla tua libreria?
+              Questa azione non può essere annullata.
+            </p>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <div className="hidden sm:block">
+            <Button layout="outline" onClick={() => setIsDeleteModalOpen(false)}>
+              Annulla
+            </Button>
+          </div>
+          <div className="hidden sm:block">
+            <Button onClick={handleConfirmDelete} className="bg-red-600 hover:bg-red-700">
+              Elimina
+            </Button>
+          </div>
+          <div className="block w-full sm:hidden">
+            <Button block size="large" layout="outline" onClick={() => setIsDeleteModalOpen(false)}>
+              Annulla
+            </Button>
+          </div>
+          <div className="block w-full sm:hidden">
+            <Button block size="large" onClick={handleConfirmDelete} className="bg-red-600 hover:bg-red-700">
+              Elimina
+            </Button>
+          </div>
+        </ModalFooter>
+      </Modal>
     </>
   )
 }

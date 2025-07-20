@@ -172,7 +172,11 @@ def sync_steam(steam_api_key, steam_id, logger=None):
                         listGame.append("0%")
                         
                 except Exception as e:
-                    logger.warning(f"Error getting achievements for {name}: {e}")
+                    if "403" in str(e):
+                        logger.warning(f"Profile may be private or API key insufficient for achievements in {name}. Error: {e}")
+                        print(f"Request failed: {e}", flush=True)
+                    else:
+                        logger.warning(f"Error getting achievements for {name}: {e}")
                     listGame.extend(["0", "0", "0%"])
             else:
                 listGame.extend(["0", "0", "0%"])

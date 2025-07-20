@@ -132,6 +132,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
 
             api_key = link.get("api_key")
             if platform == "steam":
+
+                # FIX LUIGI
                 # Per Steam, usa platform_id invece di steam_id
                 steam_id = link.get("platform_id")
                 logger.info(f"Raw Steam ID from DB (platform_id): {steam_id} (type: {type(steam_id)})")
@@ -144,13 +146,16 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     return
                 # Assicurati che steam_id sia una stringa
                 steam_id = str(steam_id)
+                # END FIX LUIGI
+
             if api_key is None:
                 db["schedules"].update_one(
                     {"job_string_id": string_job_id},
                     {"$set": {"status": "fail", "error": "No API key", "updated_at": datetime.now()}},
                 )
                 return
-                
+
+            # FIX LUIGI
             # Log delle credenziali per debug
             logger.info(f"Platform: {platform}")
             logger.info(f"API Key: {api_key[:10]}..." if api_key else "None")
@@ -159,6 +164,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
             elif platform == "psn":
                 psn_id = link.get("platform_id")
                 logger.info(f"PSN ID (from platform_id): {psn_id}")
+            # END FIX LUIGI
 
             # Call sync function
             logger.info("Calling Platform API...")

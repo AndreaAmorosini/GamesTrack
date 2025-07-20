@@ -90,6 +90,22 @@ def user_response(doc: dict) -> dict:
         "platforms": doc.get("platforms", {}),
     }
 
+def convert_objectids_to_strings(obj):
+    """Converte ricorsivamente tutti gli ObjectId in stringhe"""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if isinstance(value, ObjectId):
+                obj[key] = str(value)
+            elif isinstance(value, (dict, list)):
+                convert_objectids_to_strings(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            if isinstance(item, ObjectId):
+                item = str(item)
+            elif isinstance(item, (dict, list)):
+                convert_objectids_to_strings(item)
+    return obj
+
 #TODO: Login
 #TODO: Register
 @app.post("/register", status_code=status.HTTP_201_CREATED)
@@ -441,11 +457,13 @@ def get_all_games(
         }
     }
 
-@app.get("/companies", response_model=list[dict])
+@app.get("/companies", response_model=dict)
 def get_all_companies(
     db=Depends(get_db),
     name: str = Query(None, description="Filter companies by name (case-insensitive)"),
     country: str = Query(None, description="Filter companies by country (e.g., USA, Japan)"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(10, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
     query = {}
     
@@ -453,41 +471,114 @@ def get_all_companies(
         query["company_name"] = {"$regex": name, "$options": "i"}
     if country:
         query["country"] = {"$regex": country, "$options": "i"}
-        
-    companies = list(db["companies"].find(query))
+    
+    # Calcola il numero totale di aziende che corrispondono ai filtri
+    total_count = db["companies"].count_documents(query)
+    
+    # Calcola skip per la paginazione
+    skip = (page - 1) * limit
+    
+    # Recupera le aziende con paginazione
+    companies = list(db["companies"].find(query).skip(skip).limit(limit))
     for company in companies:
         company["_id"] = str(company["_id"])
-    return companies
+    
+    # Calcola informazioni di paginazione
+    total_pages = (total_count + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return {
+        "companies": companies,
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "items_per_page": limit,
+            "has_next": has_next,
+            "has_prev": has_prev,
+        }
+    }
 
-@app.get("/genres", response_model=list[dict])
+@app.get("/genres", response_model=dict)
 def get_all_genres(
     db=Depends(get_db),
     name: str = Query(None, description="Filter genres by name (case-insensitive)"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
     query = {}
 
     if name:
         query["genre_name"] = {"$regex": name, "$options": "i"}
 
-    genres = list(db["genres"].find(query))
+    # Calcola il numero totale di generi che corrispondono ai filtri
+    total_count = db["genres"].count_documents(query)
+    
+    # Calcola skip per la paginazione
+    skip = (page - 1) * limit
+    
+    # Recupera i generi con paginazione
+    genres = list(db["genres"].find(query).skip(skip).limit(limit))
     for genre in genres:
         genre["_id"] = str(genre["_id"])
-    return genres
+    
+    # Calcola informazioni di paginazione
+    total_pages = (total_count + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return {
+        "genres": genres,
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "items_per_page": limit,
+            "has_next": has_next,
+            "has_prev": has_prev,
+        }
+    }
 
-@app.get("/game_modes", response_model=list[dict])
+@app.get("/game_modes", response_model=dict)
 def get_all_game_modes(
     db=Depends(get_db),
     name: str = Query(None, description="Filter game_modes by name (case-insensitive)"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
     query = {}
 
     if name:
         query["game_mode_name"] = {"$regex": name, "$options": "i"}
 
-    game_modes = list(db["game_modes"].find(query))
+    # Calcola il numero totale di modalità che corrispondono ai filtri
+    total_count = db["game_modes"].count_documents(query)
+    
+    # Calcola skip per la paginazione
+    skip = (page - 1) * limit
+    
+    # Recupera le modalità con paginazione
+    game_modes = list(db["game_modes"].find(query).skip(skip).limit(limit))
     for game_mode in game_modes:
         game_mode["_id"] = str(game_mode["_id"])
-    return game_modes
+    
+    # Calcola informazioni di paginazione
+    total_pages = (total_count + limit - 1) // limit
+    has_next = page < total_pages
+    has_prev = page > 1
+    
+    return {
+        "game_modes": game_modes,
+        "pagination": {
+            "current_page": page,
+            "total_pages": total_pages,
+            "total_count": total_count,
+            "items_per_page": limit,
+            "has_next": has_next,
+            "has_prev": has_prev,
+        }
+    }
 
 
 @app.get("/consoles", response_model=list[dict])
@@ -514,6 +605,42 @@ def get_all_consoles(
         console["_id"] = str(console["_id"])
     return consoles
 
+@app.get("/platforms/mapping", response_model=dict)
+def get_platform_mapping(db=Depends(get_db)):
+    """
+    Get platform mapping for frontend use
+    Returns a mapping of platform names/abbreviations to IGDB IDs
+    """
+    try:
+        platforms = list(db["console_platforms"].find({}, {
+            "igdb_id": 1,
+            "platform_name": 1,
+            "abbreviation": 1
+        }))
+        
+        # Crea un mapping per il frontend
+        mapping = {}
+        for platform in platforms:
+            igdb_id = platform.get("igdb_id")
+            platform_name = platform.get("platform_name", "")
+            abbreviation = platform.get("abbreviation", "")
+            
+            if igdb_id is not None:
+                # Aggiungi sia il nome che l'abbreviazione
+                mapping[platform_name] = igdb_id
+                if abbreviation:
+                    mapping[abbreviation] = igdb_id
+                # Aggiungi anche l'ID numerico come chiave
+                mapping[str(igdb_id)] = igdb_id
+        
+        return {"mapping": mapping}
+        
+    except Exception as e:
+        logging.error(f"Error fetching platform mapping: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching platform mapping: {str(e)}"
+        )
+
 @app.post("/wishlist/add")
 def add_to_wishlist(
     igdb_id: str,
@@ -523,12 +650,24 @@ def add_to_wishlist(
 ):    
     try:
         # Verifica se il gioco esiste già
-        existing_game = db["games"].find_one({"igdb_id": igdb_id})
+        existing_game = db["games"].find_one({"igdb_id": int(igdb_id)})
         if existing_game:            
+            # Verifica se il gioco è già nella wishlist dell'utente
+            existing_wishlist_item = db["game_user_wishlist"].find_one({
+                "user_id": str(current_user.id),
+                "game_id": str(existing_game["_id"])
+            })
+            
+            if existing_wishlist_item:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Game already in wishlist"
+                )
+            
             db["game_user_wishlist"].insert_one(
                 {
                     "user_id": str(current_user.id),
-                    "game_id": existing_game["_id"],
+                    "game_id": str(existing_game["_id"]),  # Converti ObjectId in stringa
                     "console": console,
                     "platform": "other",  # Assuming "other" for non-specific platforms
                 }
@@ -536,7 +675,7 @@ def add_to_wishlist(
 
             
             return {
-                "message": "Game already exists in database",
+                "message": "Game added to wishlist",
                 "game_id": str(existing_game["_id"]),
                 "igdb_id": igdb_id,
                 "name": existing_game.get("name", ""),
@@ -587,7 +726,22 @@ def add_to_wishlist(
             }
 
             # Inserisci il gioco nel database
-            result = db["games"].insert_one(game_doc)
+            try:
+                result = db["games"].insert_one(game_doc)
+                game_id = str(result.inserted_id)
+            except Exception as e:
+                # Se fallisce l'inserimento (probabilmente duplicato), cerca il gioco esistente
+                if "duplicate key error" in str(e):
+                    existing_game = db["games"].find_one({"igdb_id": int(igdb_id)})
+                    if existing_game:
+                        game_id = str(existing_game["_id"])
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Error inserting game and could not find existing game"
+                        )
+                else:
+                    raise e
 
             logging.info(
                 f"Game added successfully: {game_doc['name']} (IGDB ID: {igdb_id})"
@@ -596,7 +750,7 @@ def add_to_wishlist(
             db["game_user_wishlist"].insert_one(
                 {
                     "user_id": str(current_user.id),
-                    "game_id": result.inserted_id,
+                    "game_id": game_id,  # Converti ObjectId in stringa
                     "console": console,
                     "platform": "other",  # Assuming "other" for non-specific platforms
                 }
@@ -604,7 +758,7 @@ def add_to_wishlist(
 
             return {
                 "message": "Game added successfully",
-                "game_id": str(result.inserted_id),
+                "game_id": game_id,
                 "igdb_id": igdb_id,
                 "name": game_doc["name"],
             }
@@ -622,18 +776,73 @@ def remove_from_wishlist(
     game_id: str,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
+    platform: str = Query(None, description="Piattaforma specifica da cui rimuovere (opzionale)"),
 ):
     """
     Remove a game from user's wishlist
     """
     try:
-        result = db["game_user_wishlist"].delete_one(
-            {"user_id": str(current_user.id), "game_id": game_id}
-        )
+        # Debug: log dei parametri ricevuti
+        logging.info(f"Attempting to remove from wishlist - game_id: {game_id}, user_id: {current_user.id}, platform: {platform}")
+        
+        # Prima verifichiamo se il record esiste
+        find_query = {"user_id": str(current_user.id)}
+        
+        # Prova prima con game_id come stringa
+        find_query["game_id"] = game_id
+        
+        if platform:
+            find_query["platform"] = platform
+        
+        # Debug: log della query
+        logging.info(f"Search query: {find_query}")
+        
+        # Cerca il record prima di eliminarlo
+        existing_record = db["game_user_wishlist"].find_one(find_query)
+        logging.info(f"Found record: {existing_record}")
+        
+        if not existing_record:
+            # Prova con game_id come ObjectId
+            try:
+                game_object_id = ObjectId(game_id)
+                find_query["game_id"] = game_object_id
+                logging.info(f"Trying with ObjectId - Search query: {find_query}")
+                
+                existing_record = db["game_user_wishlist"].find_one(find_query)
+                logging.info(f"Found record with ObjectId: {existing_record}")
+                
+                if existing_record:
+                    # Usa ObjectId per la query di eliminazione
+                    query = {"user_id": str(current_user.id), "game_id": game_object_id}
+                    if platform:
+                        query["platform"] = platform
+                else:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Game not found in wishlist{f' for platform {platform}' if platform else ''}"
+                    )
+            except Exception as e:
+                logging.error(f"Error converting to ObjectId: {e}")
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Game not found in wishlist{f' for platform {platform}' if platform else ''}"
+                )
+        else:
+            # Usa stringa per la query di eliminazione
+            query = {"user_id": str(current_user.id), "game_id": game_id}
+            if platform:
+                query["platform"] = platform
+        
+        logging.info(f"Delete query: {query}")
+        result = db["game_user_wishlist"].delete_one(query)
 
         if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Game not found in wishlist")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Game not found in wishlist{f' for platform {platform}' if platform else ''}"
+            )
 
+        logging.info(f"Successfully deleted {result.deleted_count} record(s)")
         return {"message": "Game removed from wishlist"}
 
     except HTTPException:
@@ -643,6 +852,142 @@ def remove_from_wishlist(
         raise HTTPException(
             status_code=500, detail=f"Error removing game from wishlist: {str(e)}"
         )
+
+
+@app.delete("/users/my-library/remove")
+def remove_from_library(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    platform: str = Query(None, description="Piattaforma specifica da cui rimuovere (opzionale)"),
+):
+    """
+    Remove a game from user's library and update platform statistics
+    """
+    try:
+        # Debug: log dei parametri ricevuti
+        logging.info(f"Attempting to remove game_id: {game_id}, user_id: {current_user.id}, platform: {platform}")
+        
+        # Converti game_id da stringa a ObjectId
+        try:
+            game_object_id = ObjectId(game_id)
+        except Exception as e:
+            logging.error(f"Invalid ObjectId format for game_id: {game_id}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid game_id format: {game_id}"
+            )
+        
+        # Costruisci la query per trovare il gioco
+        find_query = {"user_id": str(current_user.id), "game_id": game_object_id}
+        
+        # Se è specificata una piattaforma, cerca solo in quella piattaforma
+        if platform:
+            find_query["platform"] = platform
+            
+        # Prima leggi i dati del gioco prima di eliminarlo
+        game_record = db["game_user"].find_one(find_query)
+        
+        if not game_record:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Game not found in library{f' for platform {platform}' if platform else ''}"
+            )
+        
+        # Estrai i dati del gioco per aggiornare le statistiche
+        game_platform = game_record.get("platform", "other")
+        game_play_count = game_record.get("play_count", 0)
+        game_num_trophies = game_record.get("num_trophies", 0)
+        
+        # Converti i valori del gioco in interi per sicurezza
+        try:
+            game_play_count = int(game_play_count) if game_play_count is not None else 0
+            game_num_trophies = int(game_num_trophies) if game_num_trophies is not None else 0
+        except (ValueError, TypeError) as e:
+            logging.error(f"Error converting game values to int: {e}")
+            game_play_count = 0
+            game_num_trophies = 0
+        
+        logging.info(f"Game data to subtract - Platform: {game_platform}, Play count: {game_play_count} (type: {type(game_play_count)}), Trophies: {game_num_trophies} (type: {type(game_num_trophies)})")
+        
+        # Elimina il gioco dalla libreria
+        result = db["game_user"].delete_one(find_query)
+        
+        if result.deleted_count == 0:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Game not found in library{f' for platform {platform}' if platform else ''}"
+            )
+        
+        # Aggiorna le statistiche nella collezione platforms-users
+        platform_stats_query = {
+            "user_id": str(current_user.id),
+            "platform": game_platform
+        }
+        
+        # Trova il record delle statistiche della piattaforma
+        platform_stats = db["platforms-users"].find_one(platform_stats_query)
+        
+        if platform_stats:
+            logging.info(f"Platform stats before conversion: {platform_stats}")
+            
+            # Converti i valori in interi per evitare errori di tipo
+            try:
+                current_game_count = int(platform_stats.get("game_count", 0))
+                current_earned_achievements = int(platform_stats.get("earned_achievements", 0))
+                current_play_count = int(platform_stats.get("play_count", 0))
+                
+                logging.info(f"Converted values - game_count: {current_game_count} (type: {type(current_game_count)}), earned_achievements: {current_earned_achievements} (type: {type(current_earned_achievements)}), play_count: {current_play_count} (type: {type(current_play_count)})")
+                
+                # Calcola i nuovi valori sottraendo i dati del gioco eliminato
+                new_game_count = max(0, current_game_count - 1)  # Sottrai 1 gioco
+                new_earned_achievements = max(0, current_earned_achievements - game_num_trophies)
+                new_play_count = max(0, current_play_count - game_play_count)
+                
+                logging.info(f"Calculated new values - game_count: {new_game_count}, earned_achievements: {new_earned_achievements}, play_count: {new_play_count}")
+                
+            except (ValueError, TypeError) as e:
+                logging.error(f"Error converting platform stats to int: {e}")
+                logging.error(f"Platform stats values: game_count={platform_stats.get('game_count')}, earned_achievements={platform_stats.get('earned_achievements')}, play_count={platform_stats.get('play_count')}")
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Error converting platform statistics: {str(e)}"
+                )
+            
+            # Aggiorna le statistiche
+            update_result = db["platforms-users"].update_one(
+                platform_stats_query,
+                {
+                    "$set": {
+                        "game_count": new_game_count,
+                        "earned_achievements": new_earned_achievements,
+                        "play_count": new_play_count
+                    }
+                }
+            )
+            
+            logging.info(f"Updated platform stats - New values: games={new_game_count}, trophies={new_earned_achievements}, play_time={new_play_count}")
+            
+            if update_result.modified_count == 0:
+                logging.warning("No platform stats record was updated")
+        else:
+            logging.warning(f"No platform stats found for user {current_user.id} and platform {game_platform}")
+
+        logging.info(f"Successfully deleted {result.deleted_count} record(s) and updated platform statistics")
+        return {
+            "message": f"Game removed from library{f' for platform {platform}' if platform else ''} and statistics updated"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error removing game from library: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error removing game from library: {str(e)}"
+        )
+
+
+
 
 
 @app.get("/wishlist")
@@ -672,6 +1017,10 @@ def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)]
             ]
         )
     )
+    
+    # Converti tutti gli ObjectId in stringhe per la serializzazione JSON
+    wishlist = convert_objectids_to_strings(wishlist)
+    
     return {"wishlist": wishlist}
 
 @app.get("/sync_jobs")
@@ -680,6 +1029,8 @@ def get_all_sync_by_user(
     db=Depends(get_db),
     status: str = Query(None, description="Filter by status"),
     platform: str = Query(None, description="Filter by platform"),
+    page: int = Query(1, ge=1, description="Page number (starts from 1)"),
+    limit: int = Query(20, ge=1, le=100, description="Number of items per page (max 100)"),
 ):
     query = {"user_id": str(current_user.id)}
     
@@ -689,14 +1040,27 @@ def get_all_sync_by_user(
     if platform:
         query["platform"] = platform
     
-    jobs = list(db["schedules"].find(query).sort("updated_at", -1))  # Sort by created_at descending
+    # Calcola skip per paginazione
+    skip = (page - 1) * limit
+    
+    # Ottieni il totale dei job per questo utente
+    total_count = db["schedules"].count_documents(query)
+    
+    # Ottieni i job con paginazione
+    jobs = list(db["schedules"].find(query).sort("updated_at", -1).skip(skip).limit(limit))
     
     for job in jobs:
         job["_id"] = str(job["_id"])
         job["created_at"] = job["created_at"].isoformat() if isinstance(job["created_at"], datetime) else job["created_at"]
         job["updated_at"] = job["updated_at"].isoformat() if isinstance(job["updated_at"], datetime) else job["updated_at"]
         
-    return {"jobs": jobs}
+    return {
+        "jobs": jobs,
+        "total_count": total_count,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total_count + limit - 1) // limit
+    }
 
 
 @app.get("/search/igdb", response_model=dict)
@@ -891,6 +1255,18 @@ def add_game_from_igdb(
         # Verifica se il gioco esiste già
         existing_game = db["games"].find_one({"igdb_id": igdb_id})
         if existing_game:
+            # Verifica se il gioco è già nella libreria dell'utente
+            existing_library_item = db["game_user"].find_one({
+                "user_id": str(current_user.id),
+                "game_id": existing_game["_id"]
+            })
+            
+            if existing_library_item:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Game already in library"
+                )
+            
             #Add to game_user
             db["game_user"].insert_one(
                 {
@@ -904,7 +1280,7 @@ def add_game_from_igdb(
             )
             
             return {
-                "message": "Game already exists in database",
+                "message": "Game added to library",
                 "game_id": str(existing_game["_id"]),
                 "igdb_id": igdb_id,
                 "name": existing_game.get("name", ""),
@@ -955,7 +1331,22 @@ def add_game_from_igdb(
             }
 
             # Inserisci il gioco nel database
-            result = db["games"].insert_one(game_doc)
+            try:
+                result = db["games"].insert_one(game_doc)
+                game_id = str(result.inserted_id)
+            except Exception as e:
+                # Se fallisce l'inserimento (probabilmente duplicato), cerca il gioco esistente
+                if "duplicate key error" in str(e):
+                    existing_game = db["games"].find_one({"igdb_id": int(igdb_id)})
+                    if existing_game:
+                        game_id = str(existing_game["_id"])
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Error inserting game and could not find existing game"
+                        )
+                else:
+                    raise e
 
             logging.info(
                 f"Game added successfully: {game_doc['name']} (IGDB ID: {igdb_id})"
@@ -971,7 +1362,6 @@ def add_game_from_igdb(
                     "console": console,
                 }
             )
-
 
             return {
                 "message": "Game added successfully",

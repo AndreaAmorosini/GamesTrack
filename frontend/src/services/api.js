@@ -165,7 +165,7 @@ export const searchIGDBGames = async (name, platform, company, page, limit) => {
     }
 };
 
-export const addGameToLibrary = async (igdbId, platform) => {
+export const addGameToLibrary = async (igdbId, console) => {
     const token = localStorage.getItem('token');
     if (!token) {
         throw new Error('No token found');
@@ -174,7 +174,7 @@ export const addGameToLibrary = async (igdbId, platform) => {
     try {
         const queryParams = new URLSearchParams({
             igdb_id: igdbId,
-            platform: platform
+            console: console
         });
 
         const response = await fetch(`${API_URL}/games/add?${queryParams}`, {
@@ -186,12 +186,22 @@ export const addGameToLibrary = async (igdbId, platform) => {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            // Gestione specifica per errore di duplicazione
-            if (errorData.detail && errorData.detail.includes('duplicate key error')) {
-                throw new Error('Questo gioco è già nella tua wishlist!');
+            let errorMessage = 'Failed to add game';
+            try {
+                const errorData = await response.json();
+                // Gestione specifica per errore di gioco già presente nella libreria
+                if (errorData.detail && errorData.detail.includes('Game already in library')) {
+                    errorMessage = 'Questo gioco è già nella tua libreria!';
+                } else if (errorData.detail && errorData.detail.includes('duplicate key error')) {
+                    errorMessage = 'Questo gioco è già nella tua libreria!';
+                } else if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                }
+            } catch (parseError) {
+                // Se non riesce a parsare la risposta JSON, usa il messaggio di default
+                console.error('Error parsing error response:', parseError);
             }
-            throw new Error(errorData.detail || 'Failed to add game');
+            throw new Error(errorMessage);
         }
 
         return response.json();
@@ -199,4 +209,523 @@ export const addGameToLibrary = async (igdbId, platform) => {
         console.error('Add game error:', error);
         throw error;
     }
-}; 
+};
+
+// Funzione per ottenere la libreria utente
+export const getUserLibrary = async (params = {}) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            page: params.page || 1,
+            limit: params.limit || 20,
+            sort_by: params.sort_by || 'name',
+            sort_order: params.sort_order || 'asc'
+        });
+
+        if (params.platform) {
+            queryParams.append('platform', params.platform);
+        }
+
+        const response = await fetch(`${API_URL}/users/my-library?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch user library');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get user library error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere le statistiche delle piattaforme utente
+export const getUserPlatformStats = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/platforms-users`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch platform statistics');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get platform stats error:', error);
+        throw error;
+    }
+};
+
+// Funzione per sincronizzare con una piattaforma
+export const syncPlatform = async (platform) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/sync/${platform}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Failed to sync with ${platform}`);
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Sync platform error:', error);
+        throw error;
+    }
+};
+
+// Funzione per controllare lo stato della sincronizzazione
+export const checkSyncStatus = async (jobId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/sync/status/${jobId}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to check sync status');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Check sync status error:', error);
+        throw error;
+    }
+};
+
+// Funzione per rimuovere un gioco dalla libreria
+export const removeGameFromLibrary = async (gameId, platform = null) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            game_id: gameId
+        });
+        
+        if (platform) {
+            queryParams.append('platform', platform);
+        }
+
+        const response = await fetch(`${API_URL}/users/my-library/remove?${queryParams}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to remove game from library');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Remove game from library error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere la wishlist dell'utente
+export const getUserWishlist = async (params = {}) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            page: params.page || 1,
+            limit: params.limit || 20,
+            sort_by: params.sort_by || 'name',
+            sort_order: params.sort_order || 'asc'
+        });
+
+        if (params.platform) {
+            queryParams.append('platform', params.platform);
+        }
+
+        const response = await fetch(`${API_URL}/wishlist?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch user wishlist');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get user wishlist error:', error);
+        throw error;
+    }
+};
+
+// Funzione per aggiungere un gioco alla wishlist
+export const addGameToWishlist = async (igdbId, console) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            igdb_id: igdbId,
+            console: console
+        });
+
+        const response = await fetch(`${API_URL}/wishlist/add?${queryParams}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (!response.ok) {
+            let errorMessage = 'Failed to add game to wishlist';
+            try {
+                const errorData = await response.json();
+                // Gestione specifica per errore di gioco già presente nella wishlist
+                if (errorData.detail && errorData.detail.includes('Game already in wishlist')) {
+                    errorMessage = 'Questo gioco è già nella tua wishlist!';
+                } else if (errorData.detail) {
+                    errorMessage = errorData.detail;
+                }
+            } catch (parseError) {
+                // Se non riesce a parsare la risposta JSON, usa il messaggio di default
+                console.error('Error parsing error response:', parseError);
+            }
+            throw new Error(errorMessage);
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Add game to wishlist error:', error);
+        throw error;
+    }
+};
+
+// Funzione per rimuovere un gioco dalla wishlist
+export const removeGameFromWishlist = async (gameId, platform = null) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            game_id: gameId
+        });
+        
+        if (platform) {
+            queryParams.append('platform', platform);
+        }
+
+        const response = await fetch(`${API_URL}/wishlist/remove?${queryParams}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to remove game from wishlist');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Remove game from wishlist error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere le console disponibili
+export const getConsoles = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/consoles`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch consoles');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get consoles error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere il mapping delle piattaforme
+export const getPlatformMapping = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/platforms/mapping`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch platform mapping');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get platform mapping error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere tutti i giochi dal database
+export const getAllGames = async (params = {}) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams({
+            page: params.page || 1,
+            limit: params.limit || 20,
+            sort_by: params.sort_by || 'name',
+            sort_order: params.sort_order || 'asc'
+        });
+
+        // Aggiungi i filtri se presenti
+        if (params.name) queryParams.append('name', params.name);
+        if (params.genres) queryParams.append('genres', params.genres.join(','));
+        if (params.platforms) queryParams.append('platforms', params.platforms.join(','));
+        if (params.developer) queryParams.append('developer', params.developer.join(','));
+        if (params.publisher) queryParams.append('publisher', params.publisher);
+        if (params.game_mode) queryParams.append('game_mode', params.game_mode.join(','));
+
+        const response = await fetch(`${API_URL}/games?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch games');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get all games error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere i job di sincronizzazione
+export const getSyncJobs = async (params = {}) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams();
+        
+        // Parametri di paginazione
+        queryParams.append('page', params.page || 1);
+        queryParams.append('limit', params.limit || 20);
+        
+        // Parametri di filtro
+        if (params.status) queryParams.append('status', params.status);
+        if (params.platform) queryParams.append('platform', params.platform);
+
+        const response = await fetch(`${API_URL}/sync_jobs?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch sync jobs');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get sync jobs error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere tutte le aziende
+export const getCompanies = async (params = {}) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams();
+        
+        // Parametri di paginazione
+        queryParams.append('page', params.page || 1);
+        queryParams.append('limit', params.limit || 10);
+        
+        // Parametri di filtro
+        if (params.name) queryParams.append('name', params.name);
+        if (params.country) queryParams.append('country', params.country);
+
+        const response = await fetch(`${API_URL}/companies?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch companies');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get companies error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere tutti i generi
+export const getGenres = async (params = {}) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams();
+        
+        // Parametri di paginazione
+        queryParams.append('page', params.page || 1);
+        queryParams.append('limit', params.limit || 20);
+        
+        // Parametri di filtro
+        if (params.name) queryParams.append('name', params.name);
+
+        const response = await fetch(`${API_URL}/genres?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch genres');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get genres error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere tutte le modalità di gioco
+export const getGameModes = async (params = {}) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams();
+        
+        // Parametri di paginazione
+        queryParams.append('page', params.page || 1);
+        queryParams.append('limit', params.limit || 20);
+        
+        // Parametri di filtro
+        if (params.name) queryParams.append('name', params.name);
+
+        const response = await fetch(`${API_URL}/game_modes?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch game modes');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get game modes error:', error);
+        throw error;
+    }
+};
+
+ 

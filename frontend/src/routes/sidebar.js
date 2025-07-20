@@ -25,6 +25,37 @@ export default [
     name: 'Cerca Giochi',
   },
   {
+    path: '/app/gameexplorer',
+    icon: 'SearchIcon',
+    name: 'Esplora Giochi',
+  },
+  {
+    path: '/app/wishlist',
+    icon: 'HeartIcon',
+    name: 'Wishlist',
+  },
+  {
+    path: '/app/syncjobs',
+    icon: 'SyncIcon',
+    name: 'Storico Sincronizzazioni',
+  },
+  {
+    path: '/app/companies',
+    icon: 'BuildingIcon',
+    name: 'Aziende',
+  },
+  {
+    path: '/app/genres',
+    icon: 'TagIcon',
+    name: 'Generi',
+  },
+  {
+    path: '/app/gamemodes',
+    icon: 'UsersIcon',
+    name: 'Modalità di Gioco',
+  },
+  /*
+  {
     path: '/app/forms',
     icon: 'FormsIcon',
     name: 'Forms',
@@ -54,4 +85,5 @@ export default [
     icon: 'TablesIcon',
     name: 'Tables',
   },
+  */
 ]
