@@ -718,7 +718,8 @@ def search_igdb_games(
     try:
         # Costruisci la query IGDB
         where_conditions = []
-        where_conditions.append("category = 0")  # Solo giochi, esclude DLC, add-on, ecc.
+        # Solo giochi (category = 0) oppure giochi rimasterizzati/remake (category = 8)
+        where_conditions.append("(category = 0 | category = 4 | category = 8 | category = 9 | category = 11 | category = 10)")
 
         # Filtro per nome
         if name:
@@ -984,13 +985,85 @@ def add_game_from_igdb(
     except Exception as e:
         logging.error(f"Error adding game from IGDB ID {igdb_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error adding game: {str(e)}")
+    
+@app.patch("/games/update-metadata", response_model=dict)
+def update_game_metadata(
+    game_id: str,
+    igdb_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """
+    Updates a game in the database with metadata fetched from IGDB.
+    """
+    try:        
+        try:
+            oid = ObjectId(game_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid game_id format")
 
-#TODO: maybe let the user manually specifies for which console he has the game? (if from steam its pc, if from psn its ps4/ps5, if only trophy data from psn it is ps3, and then other only manually)
+        #Check if the game exists in the database
+        if not db["games"].find_one({"_id": oid}):
+            raise HTTPException(status_code=404, detail="Game not found in database")
 
-#TODO: retrieve game by ID
-#TODO: search game metadata by name
-#TODO: add to wishlist
-#TODO: remove from wishlist
+        #Fetch metadata from IGDB using the provided igdb_id
+        metadata = igdb_client.get_game_metadata("", igdb_id=igdb_id)
+        if not metadata:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Metadata for IGDB ID {igdb_id} not found",
+            )
+
+        #Build the update document
+        def normalize_name(name):
+            if not name:
+                return ""
+            import string
+
+            name = name.translate(str.maketrans("", "", string.punctuation))
+            return " ".join(name.lower().split())
+
+        update_doc = {
+            "igdb_id": metadata.get("igdb_id"),
+            "name": metadata.get("name", ""),
+            "original_name": metadata.get("name", ""),
+            "normalized_name": normalize_name(metadata.get("name", "")),
+            "platforms": metadata.get("platforms", []),
+            "genres": metadata.get("genres", []),
+            "game_modes": metadata.get("game_modes", []),
+            "release_date": metadata.get("release_date"),
+            "publisher": metadata.get("publisher"),
+            "developer": metadata.get("developer"),
+            "description": metadata.get("description", ""),
+            "cover_image": metadata.get("cover_image", ""),
+            "screenshots": metadata.get("screenshots", []),
+            "artworks": metadata.get("artworks", []),
+            "total_rating": metadata.get("total_rating", 0.0),
+            "total_rating_count": metadata.get("total_rating_count", 0),
+            "toVerify": False,  # Reset verification status on update
+        }
+
+        updated_game = db["games"].find_one_and_update(
+            {"_id": oid}, {"$set": update_doc}, return_document=True
+        )
+
+        if not updated_game:
+            raise HTTPException(status_code=404, detail="Game not found during update")
+
+        updated_game["_id"] = str(updated_game["_id"])
+
+        return {"message": "Game metadata updated successfully", "game": updated_game}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error updating game metadata for game_id {game_id}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"An unexpected error occurred: {str(e)}"
+        )
+    
+#TODO: edit game metadata
+# TODO: retrieve game by ID
 #TODO: force update game metadata
 
 
