@@ -90,6 +90,22 @@ def user_response(doc: dict) -> dict:
         "platforms": doc.get("platforms", {}),
     }
 
+def convert_objectids_to_strings(obj):
+    """Converte ricorsivamente tutti gli ObjectId in stringhe"""
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if isinstance(value, ObjectId):
+                obj[key] = str(value)
+            elif isinstance(value, (dict, list)):
+                convert_objectids_to_strings(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            if isinstance(item, ObjectId):
+                item = str(item)
+            elif isinstance(item, (dict, list)):
+                convert_objectids_to_strings(item)
+    return obj
+
 #TODO: Login
 #TODO: Register
 @app.post("/register", status_code=status.HTTP_201_CREATED)
@@ -589,6 +605,42 @@ def get_all_consoles(
         console["_id"] = str(console["_id"])
     return consoles
 
+@app.get("/platforms/mapping", response_model=dict)
+def get_platform_mapping(db=Depends(get_db)):
+    """
+    Get platform mapping for frontend use
+    Returns a mapping of platform names/abbreviations to IGDB IDs
+    """
+    try:
+        platforms = list(db["console_platforms"].find({}, {
+            "igdb_id": 1,
+            "platform_name": 1,
+            "abbreviation": 1
+        }))
+        
+        # Crea un mapping per il frontend
+        mapping = {}
+        for platform in platforms:
+            igdb_id = platform.get("igdb_id")
+            platform_name = platform.get("platform_name", "")
+            abbreviation = platform.get("abbreviation", "")
+            
+            if igdb_id is not None:
+                # Aggiungi sia il nome che l'abbreviazione
+                mapping[platform_name] = igdb_id
+                if abbreviation:
+                    mapping[abbreviation] = igdb_id
+                # Aggiungi anche l'ID numerico come chiave
+                mapping[str(igdb_id)] = igdb_id
+        
+        return {"mapping": mapping}
+        
+    except Exception as e:
+        logging.error(f"Error fetching platform mapping: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching platform mapping: {str(e)}"
+        )
+
 @app.post("/wishlist/add")
 def add_to_wishlist(
     igdb_id: str,
@@ -598,12 +650,24 @@ def add_to_wishlist(
 ):    
     try:
         # Verifica se il gioco esiste già
-        existing_game = db["games"].find_one({"igdb_id": igdb_id})
+        existing_game = db["games"].find_one({"igdb_id": int(igdb_id)})
         if existing_game:            
+            # Verifica se il gioco è già nella wishlist dell'utente
+            existing_wishlist_item = db["game_user_wishlist"].find_one({
+                "user_id": str(current_user.id),
+                "game_id": str(existing_game["_id"])
+            })
+            
+            if existing_wishlist_item:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Game already in wishlist"
+                )
+            
             db["game_user_wishlist"].insert_one(
                 {
                     "user_id": str(current_user.id),
-                    "game_id": existing_game["_id"],
+                    "game_id": str(existing_game["_id"]),  # Converti ObjectId in stringa
                     "console": console,
                     "platform": "other",  # Assuming "other" for non-specific platforms
                 }
@@ -611,7 +675,7 @@ def add_to_wishlist(
 
             
             return {
-                "message": "Game already exists in database",
+                "message": "Game added to wishlist",
                 "game_id": str(existing_game["_id"]),
                 "igdb_id": igdb_id,
                 "name": existing_game.get("name", ""),
@@ -662,7 +726,22 @@ def add_to_wishlist(
             }
 
             # Inserisci il gioco nel database
-            result = db["games"].insert_one(game_doc)
+            try:
+                result = db["games"].insert_one(game_doc)
+                game_id = str(result.inserted_id)
+            except Exception as e:
+                # Se fallisce l'inserimento (probabilmente duplicato), cerca il gioco esistente
+                if "duplicate key error" in str(e):
+                    existing_game = db["games"].find_one({"igdb_id": int(igdb_id)})
+                    if existing_game:
+                        game_id = str(existing_game["_id"])
+                    else:
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Error inserting game and could not find existing game"
+                        )
+                else:
+                    raise e
 
             logging.info(
                 f"Game added successfully: {game_doc['name']} (IGDB ID: {igdb_id})"
@@ -671,7 +750,7 @@ def add_to_wishlist(
             db["game_user_wishlist"].insert_one(
                 {
                     "user_id": str(current_user.id),
-                    "game_id": result.inserted_id,
+                    "game_id": game_id,  # Converti ObjectId in stringa
                     "console": console,
                     "platform": "other",  # Assuming "other" for non-specific platforms
                 }
@@ -679,7 +758,7 @@ def add_to_wishlist(
 
             return {
                 "message": "Game added successfully",
-                "game_id": str(result.inserted_id),
+                "game_id": game_id,
                 "igdb_id": igdb_id,
                 "name": game_doc["name"],
             }
@@ -697,18 +776,73 @@ def remove_from_wishlist(
     game_id: str,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
+    platform: str = Query(None, description="Piattaforma specifica da cui rimuovere (opzionale)"),
 ):
     """
     Remove a game from user's wishlist
     """
     try:
-        result = db["game_user_wishlist"].delete_one(
-            {"user_id": str(current_user.id), "game_id": game_id}
-        )
+        # Debug: log dei parametri ricevuti
+        logging.info(f"Attempting to remove from wishlist - game_id: {game_id}, user_id: {current_user.id}, platform: {platform}")
+        
+        # Prima verifichiamo se il record esiste
+        find_query = {"user_id": str(current_user.id)}
+        
+        # Prova prima con game_id come stringa
+        find_query["game_id"] = game_id
+        
+        if platform:
+            find_query["platform"] = platform
+        
+        # Debug: log della query
+        logging.info(f"Search query: {find_query}")
+        
+        # Cerca il record prima di eliminarlo
+        existing_record = db["game_user_wishlist"].find_one(find_query)
+        logging.info(f"Found record: {existing_record}")
+        
+        if not existing_record:
+            # Prova con game_id come ObjectId
+            try:
+                game_object_id = ObjectId(game_id)
+                find_query["game_id"] = game_object_id
+                logging.info(f"Trying with ObjectId - Search query: {find_query}")
+                
+                existing_record = db["game_user_wishlist"].find_one(find_query)
+                logging.info(f"Found record with ObjectId: {existing_record}")
+                
+                if existing_record:
+                    # Usa ObjectId per la query di eliminazione
+                    query = {"user_id": str(current_user.id), "game_id": game_object_id}
+                    if platform:
+                        query["platform"] = platform
+                else:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Game not found in wishlist{f' for platform {platform}' if platform else ''}"
+                    )
+            except Exception as e:
+                logging.error(f"Error converting to ObjectId: {e}")
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Game not found in wishlist{f' for platform {platform}' if platform else ''}"
+                )
+        else:
+            # Usa stringa per la query di eliminazione
+            query = {"user_id": str(current_user.id), "game_id": game_id}
+            if platform:
+                query["platform"] = platform
+        
+        logging.info(f"Delete query: {query}")
+        result = db["game_user_wishlist"].delete_one(query)
 
         if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Game not found in wishlist")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Game not found in wishlist{f' for platform {platform}' if platform else ''}"
+            )
 
+        logging.info(f"Successfully deleted {result.deleted_count} record(s)")
         return {"message": "Game removed from wishlist"}
 
     except HTTPException:
@@ -883,6 +1017,10 @@ def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)]
             ]
         )
     )
+    
+    # Converti tutti gli ObjectId in stringhe per la serializzazione JSON
+    wishlist = convert_objectids_to_strings(wishlist)
+    
     return {"wishlist": wishlist}
 
 @app.get("/sync_jobs")
