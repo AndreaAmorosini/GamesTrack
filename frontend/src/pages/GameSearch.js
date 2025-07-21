@@ -213,7 +213,11 @@ function GameSearch() {
                   <div className="flex items-center text-sm">
                     <img
                       className="hidden w-12 h-12 mr-3 md:block object-cover rounded"
-                      src={game.cover?.thumb_url || 'placeholder-image-url.jpg'}
+                      src={
+                        game.cover?.url
+                          ? (game.cover.url.startsWith('http') ? game.cover.url : `https:${game.cover.url}`)
+                          : 'https://via.placeholder.com/48x48?text=No+Image'
+                      }
                       alt={game.name}
                     />
                     <div>
