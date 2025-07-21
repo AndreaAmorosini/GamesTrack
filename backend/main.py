@@ -1572,7 +1572,26 @@ def get_user_library(
                             "$map": {
                                 "input": "$platforms_data",
                                 "as": "pd",
-                                "in": {"k": "$$pd.platform", "v": "$$pd.play_count"},
+                                "in": {
+                                    "k": "$$pd.platform",
+                                    "v": {
+                                        "$cond": {
+                                            "if": {"$eq": ["$$pd.platform", "steam"]},
+                                            "then": {
+                                                "$round": [
+                                                    {
+                                                        "$divide": [
+                                                            "$$pd.play_count",
+                                                            60,
+                                                        ]
+                                                    },
+                                                    2,
+                                                ]
+                                            },
+                                            "else": "$$pd.play_count",
+                                        }
+                                    },
+                                },
                             }
                         }
                     },
@@ -1585,7 +1604,26 @@ def get_user_library(
                             }
                         }
                     },
-                    "total_play_count": {"$sum": "$platforms_data.play_count"},
+                    "total_play_count": {
+                        "$sum": {
+                            "$map": {
+                                "input": "$platforms_data",
+                                "as": "pd",
+                                "in": {
+                                    "$cond": {
+                                        "if": {"$eq": ["$$pd.platform", "steam"]},
+                                        "then": {
+                                            "$round": [
+                                                {"$divide": ["$$pd.play_count", 60]},
+                                                2,
+                                            ]
+                                        },  # Converti Steam da minuti a ore
+                                        "else": "$$pd.play_count",
+                                    }
+                                },
+                            }
+                        }
+                    },
                     "total_num_trophies": {"$sum": "$platforms_data.num_trophies"},
                 }
             }

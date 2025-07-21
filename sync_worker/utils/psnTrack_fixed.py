@@ -114,7 +114,8 @@ def sync_psn(npsso, logger=None):
                     listOfListGames.append(listGame)
                     gameCount += 1
                     totPlayTimeCount += int(t.play_duration.total_seconds())
-                    time.sleep(1.5)  # Rate limiting
+                    
+                time.sleep(2)  # Rate limiting
                     
         except Exception as e:
             logger.error(f"Error getting title stats: {e}")
