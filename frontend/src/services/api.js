@@ -25,6 +25,20 @@ export const login = async (username, password) => {
     }
 };
 
+export const logout = () => {
+    // Rimuovi token e dati utente dal localStorage
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    
+    // Reindirizza alla pagina di login
+    window.location.href = '/login';
+};
+
+export const isAuthenticated = () => {
+    const token = localStorage.getItem('token');
+    return !!token; // Restituisce true se c'è un token, false altrimenti
+};
+
 export const register = async ({ email, username, password }) => {
     try {
         const response = await fetch(`${API_URL}/register`, {

@@ -1481,7 +1481,12 @@ def get_user_platforms_stats(
         for platform in platforms:
             total_stats["total_games"] += platform.get("game_count", 0)
             total_stats["total_trophies"] += platform.get("earned_achievements", 0)
-            total_stats["total_play_time"] += platform.get("play_count", 0)
+            play_time = platform.get("play_count", 0)
+
+            if platform.get("platform") == "steam":
+                play_time = round(play_time / 60, 2)  # Converti minuti in ore
+            total_stats["total_play_time"] += play_time
+            
             total_stats["completed_games"] += platform.get("full_trophies_count", 0)
             
             # Converti ObjectId in stringa per la serializzazione JSON

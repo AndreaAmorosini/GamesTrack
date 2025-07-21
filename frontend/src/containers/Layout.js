@@ -7,6 +7,7 @@ import Header from '../components/Header'
 import Main from '../containers/Main'
 import ThemedSuspense from '../components/ThemedSuspense'
 import { SidebarContext } from '../context/SidebarContext'
+import ProtectedRoute from '../components/ProtectedRoute'
 
 const Page404 = lazy(() => import('../pages/404'))
 
@@ -31,11 +32,11 @@ function Layout() {
             <Switch>
               {routes.map((route, i) => {
                 return route.component ? (
-                  <Route
+                  <ProtectedRoute
                     key={i}
                     exact={true}
                     path={`/app${route.path}`}
-                    render={(props) => <route.component {...props} />}
+                    component={route.component}
                   />
                 ) : null
               })}

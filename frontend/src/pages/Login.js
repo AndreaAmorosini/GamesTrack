@@ -1,10 +1,10 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link, useHistory } from 'react-router-dom'
 import ImageLight from '../assets/img/login-office.jpeg'
 import ImageDark from '../assets/img/login-office-dark.jpeg'
 import { GithubIcon, TwitterIcon } from '../icons'
 import { Label, Input, Button, HelperText } from '@windmill/react-ui'
-import { login, getUserProfile } from '../services/api'
+import { login, getUserProfile, isAuthenticated } from '../services/api'
 
 function Login() {
   const [username, setUsername] = useState('')
@@ -12,6 +12,18 @@ function Login() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const history = useHistory()
+
+  // Reindirizza automaticamente se l'utente è già autenticato
+  useEffect(() => {
+    if (isAuthenticated()) {
+      const { from } = history.location.state || {};
+      if (from) {
+        history.push(from.pathname);
+      } else {
+        history.push('/app');
+      }
+    }
+  }, [history]);
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -33,8 +45,15 @@ function Login() {
         console.warn('Failed to fetch user profile:', userError)
       }
 
-      // Redirect alla dashboard
-      history.push('/app')
+      // Controlla se c'è una destinazione salvata dal ProtectedRoute
+      const { from } = history.location.state || {};
+      if (from) {
+        // Redirect alla pagina originale richiesta
+        history.push(from.pathname);
+      } else {
+        // Redirect alla dashboard di default
+        history.push('/app');
+      }
     } catch (err) {
       console.error('Login error:', err)
       if (err.message.includes('Incorrect username or password')) {
