@@ -1109,7 +1109,7 @@ def search_igdb_games(
         query_parts = [
             "fields name, summary, storyline, first_release_date,",
             "total_rating, total_rating_count, aggregated_rating, aggregated_rating_count,",
-            "genres.name, platforms.name, platforms.abbreviation,",
+            "genres.name, platforms.id, platforms.name, platforms.abbreviation,",
             "involved_companies.company.name, involved_companies.developer, involved_companies.publisher,",
             "cover.url, cover.width, cover.height, cover.checksum,",
             "screenshots.url, screenshots.width, screenshots.height, screenshots.checksum;",
@@ -1143,6 +1143,7 @@ def search_igdb_games(
                 "genres": [genre.get("name") for genre in game.get("genres", [])],
                 "platforms": [
                     {
+                        "id": platform.get("id"),
                         "name": platform.get("name"),
                         "abbreviation": platform.get("abbreviation"),
                     }

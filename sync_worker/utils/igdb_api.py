@@ -59,7 +59,7 @@ class IGDBAutoAuthClient:
             name,
             uid,
             category;
-            where uid="{external_id}" & category = (1,36);
+            where uid="{external_id}" & category = (1, 4, 8, 9, 11, 10, 36);
             '''       
             external_game_result = self.query("external_games", external_game_query)
             external_game_result = json.loads(external_game_result)
