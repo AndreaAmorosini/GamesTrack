@@ -146,3 +146,11 @@ async def read_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     return current_user
+
+@router.post("/logout")
+async def logout():
+    """
+    Endpoint di logout (opzionale per invalidare token lato server)
+    In un'implementazione più avanzata, qui potresti aggiungere il token a una blacklist
+    """
+    return {"message": "Logout successful"}
