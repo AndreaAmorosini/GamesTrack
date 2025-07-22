@@ -1402,18 +1402,66 @@ def update_game_metadata(
         if existing_game and str(existing_game["_id"]) != game_id:
             #Look for all game_user with the old game_id
             existing_game_users = db["game_user"].find({"game_id": game_id})
-            for game_user in existing_game_users:
-                #Update the game_id to the new one
-                db["game_user"].update_one(
-                    {"_id": game_user["_id"]},
-                    {"$set": {"game_id": str(existing_game["_id"])}}
-                )
-            #Delete the old game
-            db["games"].delete_one({"_id": oid})
-            logging.info(f"Deleted old game with IGDB ID {igdb_id} and updated game_user references")
-            return {"message": "Game metadata updated successfully", "game": existing_game}
- 
+            #Look for eventual game_user with the existing game_id
+            existing_new_game_users = db["game_user"].find({"game_id": str(existing_game["_id"])})
+            #Look for duplicate between existing_new_game_users and existing_game_users for the same user_id and platform
+            new_game_users_map = {}
+            for game_user in existing_new_game_users:
+                key = (game_user["user_id"], game_user["platform"])
+                new_game_users_map[key] = game_user
+            
+            # Process each existing_game_user
+            for old_game_user in existing_game_users:
+                key = (old_game_user["user_id"], old_game_user["platform"])
 
+                if key in new_game_users_map:
+                    # Found duplicate - merge the data
+                    new_game_user = new_game_users_map[key]
+
+                    # Combine num_trophies and play_count (take the maximum values)
+                    combined_trophies = max(
+                        old_game_user.get("num_trophies", 0),
+                        new_game_user.get("num_trophies", 0),
+                    )
+                    combined_play_count = max(
+                        old_game_user.get("play_count", 0),
+                        new_game_user.get("play_count", 0),
+                    )
+
+                    # Update the existing new_game_user record with combined data
+                    db["game_user"].update_one(
+                        {"_id": new_game_user["_id"]},
+                        {
+                            "$set": {
+                                "game_id": existing_game["_id"],
+                                "num_trophies": combined_trophies,
+                                "play_count": combined_play_count,
+                            }
+                        },
+                    )
+
+                    # Delete the old game_user record
+                    db["game_user"].delete_one({"_id": old_game_user["_id"]})
+
+                    logging.info(
+                        f"Merged game_user records for user {old_game_user['user_id']} platform {old_game_user['platform']}: trophies={combined_trophies}, play_count={combined_play_count}"
+                    )
+
+                else:
+                    # No duplicate found - just update the game_id to point to the existing game
+                    db["game_user"].update_one(
+                        {"_id": old_game_user["_id"]},
+                        {"$set": {"game_id": existing_game["_id"]}},
+                    )
+
+                    logging.info(
+                        f"Updated game_id for user {old_game_user['user_id']} platform {old_game_user['platform']}"
+                    )
+                #Delete the old game
+                db["games"].delete_one({"_id": oid})
+                logging.info(f"Deleted old game with IGDB ID {igdb_id} and updated game_user references")
+                return {"message": "Game metadata updated successfully", "game": existing_game}
+ 
         #Fetch metadata from IGDB using the provided igdb_id
         metadata = igdb_client.get_game_metadata("", igdb_id=igdb_id)
         if not metadata:
