@@ -1396,6 +1396,23 @@ def update_game_metadata(
         #Check if the game exists in the database
         if not db["games"].find_one({"_id": oid}):
             raise HTTPException(status_code=404, detail="Game not found in database")
+        
+        #Check if there is already a game with the same metadata
+        existing_game = db["games"].find_one({"igdb_id": igdb_id})
+        if existing_game and str(existing_game["_id"]) != game_id:
+            #Look for all game_user with the old game_id
+            existing_game_users = db["game_user"].find({"game_id": game_id})
+            for game_user in existing_game_users:
+                #Update the game_id to the new one
+                db["game_user"].update_one(
+                    {"_id": game_user["_id"]},
+                    {"$set": {"game_id": str(existing_game["_id"])}}
+                )
+            #Delete the old game
+            db["games"].delete_one({"_id": oid})
+            logging.info(f"Deleted old game with IGDB ID {igdb_id} and updated game_user references")
+            return {"message": "Game metadata updated successfully", "game": existing_game}
+ 
 
         #Fetch metadata from IGDB using the provided igdb_id
         metadata = igdb_client.get_game_metadata("", igdb_id=igdb_id)
