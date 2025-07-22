@@ -204,7 +204,9 @@ export const addGameToLibrary = async (igdbId, console) => {
             try {
                 const errorData = await response.json();
                 // Gestione specifica per errore di gioco già presente nella libreria
-                if (errorData.detail && errorData.detail.includes('Game already in library')) {
+                if (errorData.detail && errorData.detail.includes('Game already in library for console')) {
+                    errorMessage = errorData.detail;
+                } else if (errorData.detail && errorData.detail.includes('Game already in library')) {
                     errorMessage = 'Questo gioco è già nella tua libreria!';
                 } else if (errorData.detail && errorData.detail.includes('duplicate key error')) {
                     errorMessage = 'Questo gioco è già nella tua libreria!';
@@ -445,7 +447,9 @@ export const addGameToWishlist = async (igdbId, console) => {
             try {
                 const errorData = await response.json();
                 // Gestione specifica per errore di gioco già presente nella wishlist
-                if (errorData.detail && errorData.detail.includes('Game already in wishlist')) {
+                if (errorData.detail && errorData.detail.includes('Game already in wishlist for console')) {
+                    errorMessage = errorData.detail;
+                } else if (errorData.detail && errorData.detail.includes('Game already in wishlist')) {
                     errorMessage = 'Questo gioco è già nella tua wishlist!';
                 } else if (errorData.detail) {
                     errorMessage = errorData.detail;
@@ -738,6 +742,90 @@ export const getGameModes = async (params = {}) => {
         return response.json();
     } catch (error) {
         console.error('Get game modes error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere le console già aggiunte alla libreria per un gioco
+export const getLibraryConsolesForGame = async (igdbId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/games/${igdbId}/library-consoles`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch library consoles');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get library consoles error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere le console già aggiunte alla wishlist per un gioco
+export const getWishlistConsolesForGame = async (igdbId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/games/${igdbId}/wishlist-consoles`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch wishlist consoles');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get wishlist consoles error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere i nomi delle console
+export const getConsoleNames = async (consoleIds) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const queryParams = new URLSearchParams();
+        consoleIds.forEach(id => queryParams.append('console_ids', id));
+
+        const response = await fetch(`${API_URL}/consoles/names?${queryParams}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch console names');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get console names error:', error);
         throw error;
     }
 };

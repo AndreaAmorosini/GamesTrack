@@ -9,11 +9,11 @@ export default [
     icon: 'HomeIcon', // the component being exported from icons/index.js
     name: 'Dashboard', // name that appear in Sidebar
   },
-  {
-    path: '/app/forms',
-    icon: 'FormsIcon',
-    name: 'Update Profile',
-  },
+  // {
+  //   path: '/app/forms',
+  //   icon: 'FormsIcon',
+  //   name: 'Update Profile',
+  // },
   {
     path: '/app/library',
     icon: 'GamesIcon',

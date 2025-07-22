@@ -19,7 +19,7 @@ import {
   ModalFooter,
 } from '@windmill/react-ui'
 import { HeartIcon, GamesIcon, SearchIcon, FilterIcon } from '../icons'
-import { getAllGames, getGenres, getCompanies, getGameModes, getConsoles, addGameToWishlist, addGameToLibrary } from '../services/api'
+import { getAllGames, getGenres, getCompanies, getGameModes, getConsoles, addGameToWishlist, addGameToLibrary, getLibraryConsolesForGame, getWishlistConsolesForGame } from '../services/api'
 
 function GameExplorer() {
   // Stati per i filtri
@@ -58,6 +58,13 @@ function GameExplorer() {
   const [isImageModalOpen, setIsImageModalOpen] = useState(false)
   const [selectedGameImages, setSelectedGameImages] = useState([])
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
+  
+  // Stati per la modal di selezione console
+  const [isConsoleModalOpen, setIsConsoleModalOpen] = useState(false)
+  const [selectedGame, setSelectedGame] = useState(null)
+  const [selectedAction, setSelectedAction] = useState('') // 'wishlist' o 'library'
+  const [selectedConsole, setSelectedConsole] = useState(null)
+  const [alreadyAddedConsoles, setAlreadyAddedConsoles] = useState([])
   
   const resultsPerPage = 20
 
@@ -161,64 +168,172 @@ function GameExplorer() {
     setPage(1)
   }
 
-  // Funzione per aggiungere un gioco alla wishlist
-  const handleAddToWishlist = async (game) => {
+  // Funzione per aprire la modal di selezione console
+  const openConsoleModal = async (game, action) => {
+    setSelectedGame(game)
+    setSelectedAction(action)
+    setSelectedConsole(null)
+    setIsConsoleModalOpen(true)
+    
+    // Carica le console già aggiunte per questo gioco
     try {
-      setWishlistLoading(prev => ({ ...prev, [game._id]: true }))
-      
-      // Determina la piattaforma principale del gioco
-      let platform = 'manual'
-      if (game.platforms && game.platforms.length > 0) {
-        const platformInfo = game.platforms[0]
-        const platformId = platformInfo.id || platformInfo.name
-        
-        if ([6, 'PC (Microsoft Windows)', 'PC'].includes(platformId)) {
-          platform = 'steam'
-        } else if ([48, 167, 'PlayStation 4', 'PlayStation 5', 'PS4', 'PS5'].includes(platformId)) {
-          platform = 'psn'
-        } else {
-          platform = 'manual'
-        }
+      if (action === 'library') {
+        const libraryData = await getLibraryConsolesForGame(game.igdb_id || game._id)
+        setAlreadyAddedConsoles(libraryData.consoles || [])
+      } else if (action === 'wishlist') {
+        const wishlistData = await getWishlistConsolesForGame(game.igdb_id || game._id)
+        setAlreadyAddedConsoles(wishlistData.consoles || [])
       }
-      
-      await addGameToWishlist(game.igdb_id || game._id, platform)
-      alert(`${game.name} aggiunto alla wishlist!`)
     } catch (err) {
-      console.error('Error adding to wishlist:', err)
-      alert(err.message || 'Errore nell\'aggiunta alla wishlist')
-    } finally {
-      setWishlistLoading(prev => ({ ...prev, [game._id]: false }))
+      console.error('Error loading already added consoles:', err)
+      setAlreadyAddedConsoles([])
     }
   }
 
-  // Funzione per aggiungere un gioco alla libreria
-  const handleAddToLibrary = async (game) => {
+  // Funzione per chiudere la modal
+  const closeConsoleModal = () => {
+    setIsConsoleModalOpen(false)
+    setSelectedGame(null)
+    setSelectedAction('')
+    setSelectedConsole(null)
+  }
+
+  // Funzione per confermare l'aggiunta del gioco
+  const confirmAddGame = async () => {
+    if (!selectedGame || !selectedConsole) return
+
     try {
-      setLibraryLoading(prev => ({ ...prev, [game._id]: true }))
-      
-      // Determina la piattaforma principale del gioco
-      let platform = 'manual'
-      if (game.platforms && game.platforms.length > 0) {
-        const platformInfo = game.platforms[0]
-        const platformId = platformInfo.id || platformInfo.name
-        
-        if ([6, 'PC (Microsoft Windows)', 'PC'].includes(platformId)) {
-          platform = 'steam'
-        } else if ([48, 167, 'PlayStation 4', 'PlayStation 5', 'PS4', 'PS5'].includes(platformId)) {
-          platform = 'psn'
-        } else {
-          platform = 'manual'
-        }
+      if (selectedAction === 'wishlist') {
+        setWishlistLoading(prev => ({ ...prev, [selectedGame._id]: true }))
+        await addGameToWishlist(selectedGame.igdb_id || selectedGame._id, selectedConsole)
+        alert(`${selectedGame.name} aggiunto alla wishlist per ${getConsoleName(selectedConsole)}!`)
+      } else if (selectedAction === 'library') {
+        setLibraryLoading(prev => ({ ...prev, [selectedGame._id]: true }))
+        await addGameToLibrary(selectedGame.igdb_id || selectedGame._id, selectedConsole)
+        alert(`${selectedGame.name} aggiunto alla libreria per ${getConsoleName(selectedConsole)}!`)
       }
-      
-      await addGameToLibrary(game.igdb_id || game._id, platform)
-      alert(`${game.name} aggiunto alla libreria!`)
+      closeConsoleModal()
     } catch (err) {
-      console.error('Error adding to library:', err)
-      alert(err.message || 'Errore nell\'aggiunta alla libreria')
+      console.error(`Error adding to ${selectedAction}:`, err)
+      alert(err.message || `Errore nell'aggiunta alla ${selectedAction}`)
     } finally {
-      setLibraryLoading(prev => ({ ...prev, [game._id]: false }))
+      if (selectedAction === 'wishlist') {
+        setWishlistLoading(prev => ({ ...prev, [selectedGame._id]: false }))
+      } else if (selectedAction === 'library') {
+        setLibraryLoading(prev => ({ ...prev, [selectedGame._id]: false }))
+      }
     }
+  }
+
+  // Funzione per ottenere il nome della console
+  const getConsoleName = (consoleId) => {
+    // Se consoleId è già una stringa (nome console), restituiscilo direttamente
+    if (typeof consoleId === 'string') {
+      return consoleId
+    }
+    
+    // Se è un numero (ID console), convertilo
+    switch (consoleId) {
+      case 6:
+        return 'PC (Microsoft Windows)'
+      case 48:
+        return 'PlayStation 4'
+      case 167:
+        return 'PlayStation 5'
+      case 130:
+        return 'Nintendo Switch'
+      case 49:
+        return 'Xbox One'
+      case 169:
+        return 'Xbox Series X|S'
+      case 3:
+        return 'Linux'
+      case 14:
+        return 'Mac'
+      case 7:
+        return 'Nintendo 3DS'
+      case 9:
+        return 'Nintendo DS'
+      case 11:
+        return 'Xbox'
+      case 12:
+        return 'Xbox 360'
+      case 13:
+        return 'PlayStation'
+      case 15:
+        return 'PlayStation 2'
+      case 16:
+        return 'PlayStation 3'
+      case 17:
+        return 'Nintendo 64'
+      case 18:
+        return 'GameCube'
+      case 19:
+        return 'Wii'
+      case 20:
+        return 'Wii U'
+      case 21:
+        return 'Game Boy'
+      case 22:
+        return 'Game Boy Color'
+      case 23:
+        return 'Game Boy Advance'
+      case 24:
+        return 'Sega Genesis'
+      case 25:
+        return 'Sega Saturn'
+      case 26:
+        return 'Sega Dreamcast'
+      case 27:
+        return 'Sega Game Gear'
+      case 28:
+        return 'Sega Master System'
+      case 29:
+        return 'Sega Mega Drive'
+      case 30:
+        return 'Sega CD'
+      case 31:
+        return 'Sega 32X'
+      case 50:
+        return 'Xbox Series X'
+      case 51:
+        return 'Xbox Series S'
+      default:
+        return `Console ${consoleId}`
+    }
+  }
+
+  // Funzione per ottenere le console disponibili per un gioco
+  const getAvailableConsoles = (game) => {
+    if (!game || !game.platforms || game.platforms.length === 0) {
+      return []
+    }
+
+    const availableConsoles = []
+    for (const platform of game.platforms) {
+      if (typeof platform === 'object' && platform.id) {
+        availableConsoles.push({
+          id: platform.id,
+          name: platform.name || platform.abbreviation || getConsoleName(platform.id)
+        })
+      } else if (typeof platform === 'number') {
+        availableConsoles.push({
+          id: platform,
+          name: getConsoleName(platform)
+        })
+      }
+    }
+    return availableConsoles
+  }
+
+  // Funzione per aggiungere un gioco alla wishlist (ora apre la modal)
+  const handleAddToWishlist = async (game) => {
+    openConsoleModal(game, 'wishlist')
+  }
+
+  // Funzione per aggiungere un gioco alla libreria (ora apre la modal)
+  const handleAddToLibrary = async (game) => {
+    openConsoleModal(game, 'library')
   }
 
   // Reset filtri
@@ -300,14 +415,14 @@ function GameExplorer() {
           <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300">
             Filtri di Ricerca
           </h3>
-          <Button
+          {/* <Button
             layout="outline"
             size="small"
             onClick={() => setIsFilterModalOpen(true)}
             icon={FilterIcon}
           >
             Filtri Avanzati
-          </Button>
+          </Button> */}
         </div>
         
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -412,14 +527,25 @@ function GameExplorer() {
               <TableRow key={i}>
                 <TableCell>
                   <div className="flex items-center text-sm">
-                    <img
+                    {/* <img
                       className="hidden w-12 h-12 mr-3 md:block object-cover rounded"
                       src={game.cover_image || 'placeholder-image-url.jpg'}
                       alt={game.name}
                       onError={(e) => {
                         e.target.src = 'placeholder-image-url.jpg'
                       }}
+                    /> */}
+
+                    <img
+                      className="hidden w-12 h-12 mr-3 md:block object-cover rounded"
+                      src={game.cover_image || '/default_cover.png'}
+                      alt={game.name}
+                      onError={(e) => {
+                        e.target.onerror = null
+                        e.target.src = '/default_cover.png'
+                      }}
                     />
+
                     <div>
                       <p className="font-semibold">{game.name}</p>
                       {game.original_name && game.original_name !== game.name && (
@@ -674,12 +800,21 @@ function GameExplorer() {
           {selectedGameImages.length > 0 && (
             <div className="relative">
               <div className="flex justify-center mb-4">
-                <img
+                {/* <img
                   src={selectedGameImages[currentImageIndex].url}
                   alt={`${selectedGameImages[currentImageIndex].type} ${currentImageIndex + 1}`}
                   className="max-w-full max-h-96 object-contain rounded"
                   onError={(e) => {
                     e.target.src = 'placeholder-image-url.jpg'
+                  }}
+                /> */}
+                <img
+                  src={selectedGameImages[currentImageIndex].url}
+                  alt={`${selectedGameImages[currentImageIndex].type} ${currentImageIndex + 1}`}
+                  className="max-w-full max-h-96 object-contain rounded"
+                  onError={(e) => {
+                    e.target.onerror = null
+                    e.target.src = '/default_cover.png'
                   }}
                 />
               </div>
@@ -712,6 +847,77 @@ function GameExplorer() {
         <ModalFooter>
           <Button layout="outline" onClick={closeImageModal}>
             Chiudi
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      {/* Modal per la selezione della console */}
+      <Modal isOpen={isConsoleModalOpen} onClose={closeConsoleModal}>
+        <ModalHeader>
+          Seleziona Console per {selectedGame?.name}
+        </ModalHeader>
+        <ModalBody>
+          {selectedGame ? (
+            <div>
+              <p className="mb-4 text-gray-600 dark:text-gray-400">
+                Seleziona la console per cui vuoi aggiungere questo gioco alla {selectedAction === 'wishlist' ? 'wishlist' : 'libreria'}:
+              </p>
+              
+              <div className="space-y-2">
+                {getAvailableConsoles(selectedGame).map((console) => {
+                  const isAlreadyAdded = alreadyAddedConsoles.includes(console.id)
+                  return (
+                    <label 
+                      key={console.id} 
+                      className={`flex items-center p-3 border rounded-lg cursor-pointer ${
+                        isAlreadyAdded 
+                          ? 'bg-gray-100 dark:bg-gray-700 opacity-50 cursor-not-allowed' 
+                          : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="console"
+                        value={console.id}
+                        checked={selectedConsole === console.id}
+                        onChange={(e) => setSelectedConsole(parseInt(e.target.value))}
+                        disabled={isAlreadyAdded}
+                        className="mr-3"
+                      />
+                      <span className="text-sm font-medium">
+                        {console.name}
+                        {isAlreadyAdded && (
+                          <span className="ml-2 text-xs text-green-600 dark:text-green-400">
+                            ✓ Già aggiunto
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+              
+              {getAvailableConsoles(selectedGame).length === 0 && (
+                <p className="text-yellow-400 text-sm">
+                  Nessuna console disponibile per questo gioco.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-gray-600 dark:text-gray-400">
+              Caricamento informazioni gioco...
+            </p>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button layout="outline" onClick={closeConsoleModal}>
+            Annulla
+          </Button>
+          <Button 
+            onClick={confirmAddGame}
+            disabled={!selectedConsole || getAvailableConsoles(selectedGame).length === 0 || alreadyAddedConsoles.includes(selectedConsole)}
+          >
+            {selectedAction === 'wishlist' ? 'Aggiungi alla Wishlist' : 'Aggiungi alla Libreria'}
           </Button>
         </ModalFooter>
       </Modal>

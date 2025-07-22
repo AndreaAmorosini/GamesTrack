@@ -22,7 +22,7 @@ import { TrashIcon } from '../icons'
 import InfoCard from '../components/Cards/InfoCard'
 import RoundIcon from '../components/RoundIcon'
 import { GamesIcon, TrophyIcon, PlayIcon, StarIcon } from '../icons'
-import { getUserLibrary, getUserPlatformStats, syncPlatform, removeGameFromLibrary, checkSyncStatus } from '../services/api'
+import { getUserLibrary, getUserPlatformStats, syncPlatform, removeGameFromLibrary, checkSyncStatus, getConsoleNames } from '../services/api'
 
 
 function MyLibrary() {
@@ -57,6 +57,89 @@ function MyLibrary() {
 
   const resultsPerPage = 10
 
+  // Cache per i nomi delle console
+  const [consoleNamesCache, setConsoleNamesCache] = useState({})
+
+  // Funzione generica per ottenere il nome della console
+  const getConsoleName = async (consoleCode) => {
+    // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
+    if (typeof consoleCode === 'string') {
+      return consoleCode
+    }
+    
+    // Se è un numero (ID console), controlla la cache
+    if (consoleNamesCache[consoleCode]) {
+      return consoleNamesCache[consoleCode]
+    }
+    
+    // Se non è in cache, recupera dal database
+    try {
+      const response = await getConsoleNames([consoleCode])
+      const consoleName = response.console_names[consoleCode] || `Console ${consoleCode}`
+      
+      // Aggiorna la cache
+      setConsoleNamesCache(prev => ({
+        ...prev,
+        [consoleCode]: consoleName
+      }))
+      
+      return consoleName
+    } catch (error) {
+      console.error('Error getting console name:', error)
+      return `Console ${consoleCode}`
+    }
+  }
+
+  // Funzione per renderizzare le console come array (versione sincrona per la cache)
+  const renderConsoles = (game) => {
+    const consoles = game.consoles || []
+    
+    if (consoles.length === 0) {
+      return <span className="text-gray-400">Nessuna console</span>
+    }
+    
+    return (
+      <div className="flex flex-wrap gap-1">
+        {consoles.map((console, idx) => (
+          <Badge key={idx} type="success">
+            {consoleNamesCache[console] || `Console ${console}`}
+          </Badge>
+        ))}
+      </div>
+    )
+  }
+
+  // Funzione per caricare i nomi delle console
+  const loadConsoleNames = async (games) => {
+    const consoleIds = []
+    
+    // Raccogli tutti gli ID delle console dai giochi
+    games.forEach(game => {
+      if (game.consoles && Array.isArray(game.consoles)) {
+        game.consoles.forEach(consoleId => {
+          if (typeof consoleId === 'number' && !consoleNamesCache[consoleId]) {
+            consoleIds.push(consoleId)
+          }
+        })
+      }
+    })
+    
+    // Se ci sono nuovi ID, recuperali dal database
+    if (consoleIds.length > 0) {
+      try {
+        const uniqueIds = [...new Set(consoleIds)]
+        const response = await getConsoleNames(uniqueIds)
+        
+        setConsoleNamesCache(prev => ({
+          ...prev,
+          ...response.console_names
+        }))
+      } catch (error) {
+        console.error('Error loading console names:', error)
+      }
+    }
+  }
+
   // Funzione per caricare i giochi
   const fetchGames = async () => {
     setIsLoading(true)
@@ -72,8 +155,12 @@ function MyLibrary() {
       })
       
       // Assicurati che library sia sempre un array
-      setGames(Array.isArray(data.library) ? data.library : [])
+      const gamesArray = Array.isArray(data.library) ? data.library : []
+      setGames(gamesArray)
       setTotalResults(data.pagination?.total_count || 0)
+      
+      // Carica i nomi delle console
+      await loadConsoleNames(gamesArray)
       
       // Aggiorna le statistiche
       try {
@@ -340,13 +427,13 @@ function MyLibrary() {
       <TableContainer className="mb-8">
         <Table>
           <TableHeader>
-            <tr>
+            <TableRow>
               <TableCell>Gioco</TableCell>
-              <TableCell>Piattaforme</TableCell>
-              <TableCell>Trofei/Achievement</TableCell>
-              <TableCell>Ore Giocate</TableCell>
+              <TableCell>Console</TableCell>
+              <TableCell>Tempo di Gioco</TableCell>
+              <TableCell>Trofei</TableCell>
               <TableCell>Azioni</TableCell>
-            </tr>
+            </TableRow>
           </TableHeader>
           <TableBody>
             {games.length === 0 ? (
@@ -369,31 +456,42 @@ function MyLibrary() {
                 <TableRow key={i}>
                   <TableCell>
                     <div className="flex items-center text-sm">
-                      {game.cover_image && (
+
+                      {/* {game.cover_image && (
                         <img
                           className="hidden w-12 h-12 rounded mr-3 md:block"
                           src={game.cover_image}
                           alt={game.name}
                         />
-                      )}
+                      )} */}
+
+                      <img
+                        className="hidden w-12 h-12 rounded mr-3 md:block"
+                        src={game.cover_image || '/default_cover.png'}
+                        alt={game.name}
+                        onError={(e) => {
+                          e.target.onerror = null // Previene loop infiniti
+                          e.target.src = '/default_cover.png' // Percorso immagine di fallback
+                        }}
+                      />
+
+
                       <div>
                         <p className="font-semibold">{game.name}</p>
                       </div>
                     </div>
                   </TableCell>
                   <TableCell>
+                    {renderConsoles(game)}
+                  </TableCell>
+                  <TableCell>
                     <span className="text-sm">
-                      {Array.isArray(game.own_platforms) ? game.own_platforms.join(', ') : 'N/A'}
+                      {game.total_play_count || 0}h
                     </span>
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">
                       {game.total_num_trophies || 0}
-                    </span>
-                  </TableCell>
-                  <TableCell>
-                    <span className="text-sm">
-                      {game.total_play_count || 0}h
                     </span>
                   </TableCell>
                   <TableCell>

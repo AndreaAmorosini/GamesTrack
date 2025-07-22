@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getUserWishlist, removeGameFromWishlist } from '../services/api';
+import { getUserWishlist, removeGameFromWishlist, getConsoleNames } from '../services/api';
 import { Card, CardBody, Button, Badge } from '@windmill/react-ui';
 import { TrashIcon, HeartIcon, StarIcon, PlayIcon } from '../icons';
 import ThemedSuspense from '../components/ThemedSuspense';
@@ -18,6 +18,7 @@ const Wishlist = () => {
     const [deleteLoading, setDeleteLoading] = useState(null);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [gameToDelete, setGameToDelete] = useState(null);
+    const [consoleNamesCache, setConsoleNamesCache] = useState({});
 
     const platforms = [
         { value: '', label: 'Tutte le piattaforme' },
@@ -32,6 +33,37 @@ const Wishlist = () => {
         { value: 'rating', label: 'Rating' },
         { value: 'release_date', label: 'Data di uscita' }
     ];
+
+    // Funzione per caricare i nomi delle console
+    const loadConsoleNames = async (wishlistItems) => {
+        const consoleIds = [];
+        
+        // Raccogli tutti gli ID delle console dai giochi
+        wishlistItems.forEach(item => {
+            if (item.consoles && Array.isArray(item.consoles)) {
+                item.consoles.forEach(consoleId => {
+                    if (typeof consoleId === 'number' && !consoleNamesCache[consoleId]) {
+                        consoleIds.push(consoleId);
+                    }
+                });
+            }
+        });
+        
+        // Se ci sono nuovi ID, recuperali dal database
+        if (consoleIds.length > 0) {
+            try {
+                const uniqueIds = [...new Set(consoleIds)];
+                const response = await getConsoleNames(uniqueIds);
+                
+                setConsoleNamesCache(prev => ({
+                    ...prev,
+                    ...response.console_names
+                }));
+            } catch (error) {
+                console.error('Error loading console names:', error);
+            }
+        }
+    };
 
     const fetchWishlist = async () => {
         try {
@@ -51,9 +83,13 @@ const Wishlist = () => {
 
             const data = await getUserWishlist(params);
             // Il backend restituisce { wishlist: [...] } invece di { games: [...] }
-            setWishlist(data.wishlist || data.games || []);
+            const wishlistArray = data.wishlist || data.games || [];
+            setWishlist(wishlistArray);
             setTotalPages(data.total_pages || 1);
             setTotalGames(data.total_games || data.wishlist?.length || 0);
+            
+            // Carica i nomi delle console
+            await loadConsoleNames(wishlistArray);
         } catch (err) {
             console.error('Error fetching wishlist:', err);
             setError(err.message || 'Errore nel caricamento della wishlist');
@@ -119,6 +155,21 @@ const Wishlist = () => {
             default:
                 return 'default';
         }
+    };
+
+    const getConsoleName = (consoleCode) => {
+        // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
+        if (typeof consoleCode === 'string') {
+            return consoleCode
+        }
+        
+        // Se è un numero (ID console), controlla la cache
+        if (consoleNamesCache[consoleCode]) {
+            return consoleNamesCache[consoleCode]
+        }
+        
+        // Se non è in cache, restituisci un fallback
+        return `Console ${consoleCode}`;
     };
 
     const formatDate = (dateString) => {
@@ -272,13 +323,16 @@ const Wishlist = () => {
                         {wishlist.map((wishlistItem) => {
                             // Estrai i dettagli del gioco dal game_details
                             const gameDetails = wishlistItem.game_details?.[0] || {};
+                            
+                            const coverUrl = wishlistItem.cover_image ? `https:${wishlistItem.cover_image}` : null;
+                            
                             const game = {
                                 ...wishlistItem,
                                 name: gameDetails.name || wishlistItem.name,
                                 rating: gameDetails.total_rating,
                                 release_date: gameDetails.release_date,
                                 summary: gameDetails.description,
-                                cover_url: gameDetails.cover_image ? `https:${gameDetails.cover_image}` : null
+                                cover_url: coverUrl
                             };
                             
                             return (
@@ -290,9 +344,26 @@ const Wishlist = () => {
                                                     {game.name}
                                                 </h3>
                                                 <div className="flex items-center mt-2">
-                                                    <Badge type={getPlatformType(wishlistItem.platform)}>
-                                                        {getPlatformIcon(wishlistItem.platform)} {wishlistItem.platform || 'N/A'}
-                                                    </Badge>
+                                                    {/* Mostra tutte le piattaforme */}
+                                                    {wishlistItem.platforms && wishlistItem.platforms.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {wishlistItem.platforms.map((platform, idx) => (
+                                                                <Badge key={idx} type={getPlatformType(platform)}>
+                                                                    {getPlatformIcon(platform)} {platform || 'N/A'}
+                                                                </Badge>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {/* Mostra tutte le console */}
+                                                    {wishlistItem.consoles && wishlistItem.consoles.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1 ml-2">
+                                                            {wishlistItem.consoles.map((console, idx) => (
+                                                                <Badge key={idx} type="success">
+                                                                    {getConsoleName(console)}
+                                                                </Badge>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         <Button
@@ -309,11 +380,19 @@ const Wishlist = () => {
                                     </div>
                                     <div className="space-y-3">
                                         {game.cover_url && (
-                                            <div className="aspect-w-16 aspect-h-9 mb-4">
+                                            <div className="mb-4">
                                                 <img
                                                     src={game.cover_url}
                                                     alt={game.name}
-                                                    className="w-full h-32 object-cover rounded-lg"
+                                                    className="w-full h-48 object-contain rounded-lg bg-gray-100 dark:bg-gray-700"
+                                                    onError={(e) => {
+                                                        e.target.style.display = 'none'
+                                                        // Mostra un'icona di fallback
+                                                        const fallbackIcon = document.createElement('div')
+                                                        fallbackIcon.className = 'w-full h-48 flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-lg'
+                                                        fallbackIcon.innerHTML = '<svg class="w-12 h-12 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path></svg>'
+                                                        e.target.parentNode.appendChild(fallbackIcon)
+                                                    }}
                                                 />
                                             </div>
                                         )}

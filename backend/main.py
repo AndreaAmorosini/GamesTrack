@@ -659,16 +659,29 @@ def add_to_wishlist(
             })
             
             if existing_wishlist_item:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Game already in wishlist"
-                )
+                # Se il gioco esiste già, aggiungi la console all'array se non presente
+                if console not in existing_wishlist_item.get("consoles", []):
+                    db["game_user_wishlist"].update_one(
+                        {"_id": existing_wishlist_item["_id"]},
+                        {"$push": {"consoles": console}}
+                    )
+                    return {
+                        "message": f"Console {console} added to existing game in wishlist",
+                        "game_id": str(existing_game["_id"]),
+                        "igdb_id": igdb_id,
+                        "name": existing_game.get("name", ""),
+                    }
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Game already in wishlist for console {console}"
+                    )
             
             db["game_user_wishlist"].insert_one(
                 {
                     "user_id": str(current_user.id),
                     "game_id": str(existing_game["_id"]),  # Converti ObjectId in stringa
-                    "console": console,
+                    "consoles": [console],  # Array di console
                     "platform": "other",  # Assuming "other" for non-specific platforms
                 }
             )
@@ -681,7 +694,6 @@ def add_to_wishlist(
                 "name": existing_game.get("name", ""),
             }
         else:
-
             # Recupera i metadata da IGDB usando l'ID
             metadata = igdb_client.get_game_metadata("", igdb_id=igdb_id)
 
@@ -751,7 +763,7 @@ def add_to_wishlist(
                 {
                     "user_id": str(current_user.id),
                     "game_id": game_id,  # Converti ObjectId in stringa
-                    "console": console,
+                    "consoles": [console],  # Array di console
                     "platform": "other",  # Assuming "other" for non-specific platforms
                 }
             )
@@ -1009,9 +1021,52 @@ def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)]
                         "as": "game_details",
                     }
                 },
+                {"$unwind": "$game_details"},
+                # Join con console_platforms per ottenere i nomi delle console
+                {
+                    "$lookup": {
+                        "from": "console_platforms",
+                        "localField": "consoles",  # Usa l'array di console
+                        "foreignField": "igdb_id",
+                        "as": "console_details",
+                    }
+                },
+                # Raggruppa per game_id per unire le piattaforme
+                {
+                    "$group": {
+                        "_id": "$game_id",
+                        "game_id": {"$first": "$game_id"},
+                        "user_id": {"$first": "$user_id"},
+                        "name": {"$first": "$game_details.name"},
+                        "cover_image": {"$first": "$game_details.cover_image"},
+                        "game_details": {"$first": "$game_details"},
+                        "platforms": {"$addToSet": "$platform"},  # Array di piattaforme uniche
+                        "all_consoles": {"$addToSet": "$consoles"},  # Array di array di console
+                        "console_details": {"$first": "$console_details"},
+                    }
+                },
                 {
                     "$project": {
-                        "game_object_id": 0,
+                        "_id": 1,
+                        "game_id": 1,
+                        "user_id": 1,
+                        "name": 1,
+                        "cover_image": 1,
+                        "game_details": 1,
+                        "platforms": 1,
+                        "consoles": {
+                            "$reduce": {
+                                "input": "$all_consoles",
+                                "initialValue": [],
+                                "in": {
+                                    "$concatArrays": [
+                                        "$$value",
+                                        {"$ifNull": ["$$this", []]}
+                                    ]
+                                }
+                            }
+                        },
+                        "console_details": 1,
                     }
                 }
             ]
@@ -1263,12 +1318,25 @@ def add_game_from_igdb(
             })
             
             if existing_library_item:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Game already in library"
-                )
+                # Se il gioco esiste già, aggiungi la console all'array se non presente
+                if console not in existing_library_item.get("consoles", []):
+                    db["game_user"].update_one(
+                        {"_id": existing_library_item["_id"]},
+                        {"$push": {"consoles": console}}
+                    )
+                    return {
+                        "message": f"Console {console} added to existing game in library",
+                        "game_id": str(existing_game["_id"]),
+                        "igdb_id": igdb_id,
+                        "name": existing_game.get("name", ""),
+                    }
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Game already in library for console {console}"
+                    )
             
-            #Add to game_user
+            # Se il gioco non esiste, crea un nuovo record
             db["game_user"].insert_one(
                 {
                     "game_id": existing_game["_id"],
@@ -1276,7 +1344,7 @@ def add_game_from_igdb(
                     "platform": "other", 
                     "num_trophies": num_trophies,
                     "play_count": play_count,
-                    "console": console,
+                    "consoles": [console],  # Array di console
                 }
             )
             
@@ -1287,7 +1355,6 @@ def add_game_from_igdb(
                 "name": existing_game.get("name", ""),
             }
         else:
-
             # Recupera i metadata da IGDB usando l'ID
             metadata = igdb_client.get_game_metadata("", igdb_id=igdb_id)
 
@@ -1360,7 +1427,7 @@ def add_game_from_igdb(
                     "platform": "other",
                     "num_trophies": num_trophies,
                     "play_count": play_count,
-                    "console": console,
+                    "consoles": [console],  # Array di console
                 }
             )
 
@@ -1608,6 +1675,15 @@ def get_user_library(
                     }
                 },
                 {"$unwind": "$game_details"},
+                # Join con console_platforms per ottenere i nomi delle console
+                {
+                    "$lookup": {
+                        "from": "console_platforms",
+                        "localField": "consoles",  # Usa l'array di console
+                        "foreignField": "igdb_id",
+                        "as": "console_details",
+                    }
+                },
             ]
         )
 
@@ -1623,6 +1699,8 @@ def get_user_library(
                             "platform": "$platform",
                             "play_count": {"$toInt": "$play_count"},
                             "num_trophies": {"$toInt": "$num_trophies"},
+                            "consoles": "$consoles",  # Array di console
+                            "console_details": "$console_details",
                         }
                     },
                 }
@@ -1634,10 +1712,21 @@ def get_user_library(
             {
                 "$project": {
                     "_id": 0,
-                    "game_id": {"$toString": "$_id"},
                     "name": 1,
                     "cover_image": 1,
                     "own_platforms": "$platforms_data.platform",
+                    "consoles": {
+                        "$reduce": {
+                            "input": "$platforms_data",
+                            "initialValue": [],
+                            "in": {
+                                "$concatArrays": [
+                                    "$$value",
+                                    {"$ifNull": ["$$this.consoles", []]}
+                                ]
+                            }
+                        }
+                    },
                     "play_count_by_platform": {
                         "$arrayToObject": {
                             "$map": {
@@ -1650,46 +1739,12 @@ def get_user_library(
                                             "if": {"$eq": ["$$pd.platform", "steam"]},
                                             "then": {
                                                 "$round": [
-                                                    {
-                                                        "$divide": [
-                                                            "$$pd.play_count",
-                                                            60,
-                                                        ]
-                                                    },
+                                                    {"$divide": ["$$pd.play_count", 60]},
                                                     2,
                                                 ]
-                                            },
+                                            },  # Converti Steam da minuti a ore
                                             "else": "$$pd.play_count",
                                         }
-                                    },
-                                },
-                            }
-                        }
-                    },
-                    "num_trophies_by_platform": {
-                        "$arrayToObject": {
-                            "$map": {
-                                "input": "$platforms_data",
-                                "as": "pd",
-                                "in": {"k": "$$pd.platform", "v": "$$pd.num_trophies"},
-                            }
-                        }
-                    },
-                    "total_play_count": {
-                        "$sum": {
-                            "$map": {
-                                "input": "$platforms_data",
-                                "as": "pd",
-                                "in": {
-                                    "$cond": {
-                                        "if": {"$eq": ["$$pd.platform", "steam"]},
-                                        "then": {
-                                            "$round": [
-                                                {"$divide": ["$$pd.play_count", 60]},
-                                                2,
-                                            ]
-                                        },  # Converti Steam da minuti a ore
-                                        "else": "$$pd.play_count",
                                     }
                                 },
                             }
@@ -1897,3 +1952,106 @@ def get_user_stats(
         raise HTTPException(
             status_code=500, detail=f"Error retrieving user statistics: {str(e)}"
         )
+
+@app.get("/games/{igdb_id}/library-consoles")
+def get_library_consoles_for_game(
+    igdb_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """Get consoles already added to library for a specific game"""
+    try:
+        # Trova il gioco nel database
+        game = db["games"].find_one({"igdb_id": igdb_id})
+        if not game:
+            raise HTTPException(status_code=404, detail="Game not found")
+        
+        # Trova tutte le console già aggiunte per questo gioco nella libreria
+        library_items = list(db["game_user"].find({
+            "user_id": str(current_user.id),
+            "game_id": game["_id"]
+        }))
+        
+        # Estrai le console dagli array
+        consoles = []
+        for item in library_items:
+            if "consoles" in item and isinstance(item["consoles"], list):
+                consoles.extend(item["consoles"])
+            elif "console" in item and item["console"] is not None:
+                # Gestione retrocompatibilità per record esistenti
+                consoles.append(item["console"])
+        
+        # Rimuovi duplicati
+        consoles = list(set(consoles))
+        
+        return {"consoles": consoles}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error getting library consoles for game {igdb_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting library consoles: {str(e)}")
+
+
+@app.get("/games/{igdb_id}/wishlist-consoles")
+def get_wishlist_consoles_for_game(
+    igdb_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """Get consoles already added to wishlist for a specific game"""
+    try:
+        # Trova il gioco nel database
+        game = db["games"].find_one({"igdb_id": igdb_id})
+        if not game:
+            raise HTTPException(status_code=404, detail="Game not found")
+        
+        # Trova tutte le console già aggiunte per questo gioco nella wishlist
+        wishlist_items = list(db["game_user_wishlist"].find({
+            "user_id": str(current_user.id),
+            "game_id": str(game["_id"])
+        }))
+        
+        # Estrai le console dagli array
+        consoles = []
+        for item in wishlist_items:
+            if "consoles" in item and isinstance(item["consoles"], list):
+                consoles.extend(item["consoles"])
+            elif "console" in item and item["console"] is not None:
+                # Gestione retrocompatibilità per record esistenti
+                consoles.append(item["console"])
+        
+        # Rimuovi duplicati
+        consoles = list(set(consoles))
+        
+        return {"consoles": consoles}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error getting wishlist consoles for game {igdb_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting wishlist consoles: {str(e)}")
+
+@app.get("/consoles/names")
+def get_console_names(
+    console_ids: list[int] = Query(..., description="Lista di ID console per cui ottenere i nomi"),
+    db=Depends(get_db),
+):
+    """Get console names for a list of console IDs"""
+    try:
+        # Trova le console nel database
+        consoles = list(db["console_platforms"].find(
+            {"igdb_id": {"$in": console_ids}},
+            {"igdb_id": 1, "platform_name": 1, "abbreviation": 1}
+        ))
+        
+        # Crea un mapping ID -> nome
+        console_mapping = {}
+        for console in consoles:
+            console_mapping[console["igdb_id"]] = console.get("platform_name", console.get("abbreviation", f"Console {console['igdb_id']}"))
+        
+        return {"console_names": console_mapping}
+        
+    except Exception as e:
+        logging.error(f"Error getting console names: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting console names: {str(e)}")
