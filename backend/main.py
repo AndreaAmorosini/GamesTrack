@@ -1697,3 +1697,138 @@ def get_user_library(
         raise HTTPException(
             status_code=500, detail="Impossibile recuperare la libreria utente."
         )
+
+
+@app.get("/users/dashboard", response_model=dict)
+def get_user_stats(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """
+    Get comprehensive statistics for the current user including library, wishlist,
+    platform distribution, and last sync job information.
+    """
+    try:
+        user_id = str(current_user.id)
+
+        #Total owned games
+        total_owned_games = db["game_user"].count_documents({"user_id": user_id})
+
+        #Total achievements and playtime from platforms-users
+        platform_stats = list(db["platforms-users"].find({"user_id": user_id}))
+
+        total_achievements = 0
+        total_playcount = 0
+        games_by_platform = {"steam": 0, "psn": 0, "other": 0}
+
+        for platform in platform_stats:
+            total_achievements += platform.get("earned_achievements", 0)
+            play_count = platform.get("play_count", 0)
+
+            # Convert Steam minutes to hours
+            if platform.get("platform") == "steam":
+                play_count = round(play_count / 60, 2)
+
+            total_playcount += play_count
+
+            # Count games by platform
+            platform_name = platform.get("platform", "other")
+            if platform_name in games_by_platform:
+                games_by_platform[platform_name] = platform.get("game_count", 0)
+            else:
+                games_by_platform["other"] += platform.get("game_count", 0)
+
+        # games by platform from game_user
+        platform_distribution = list(
+            db["game_user"].aggregate(
+                [
+                    {"$match": {"user_id": user_id}},
+                    {"$group": {"_id": "$platform", "count": {"$sum": 1}}},
+                    {"$project": {"platform": "$_id", "count": 1, "_id": 0}},
+                ]
+            )
+        )
+
+        # Convert to dictionary
+        games_by_platform_actual = {"steam": 0, "psn": 0, "other": 0}
+        for item in platform_distribution:
+            platform_name = item.get("platform", "other")
+            if platform_name in games_by_platform_actual:
+                games_by_platform_actual[platform_name] = item.get("count", 0)
+            else:
+                games_by_platform_actual["other"] += item.get("count", 0)
+
+        #Total games in wishlist
+        total_wishlist_games = db["game_user_wishlist"].count_documents(
+            {"user_id": user_id}
+        )
+
+        #Total games in DB
+        total_games_in_db = db["games"].count_documents({})
+
+        #Last sync job
+        last_sync_job = db["schedules"].find_one(
+            {"user_id": user_id},
+            sort=[("updated_at", -1)],  #most recent
+        )
+
+        last_sync_info = None
+        if last_sync_job:
+            last_sync_info = {
+                "job_id": last_sync_job.get("job_string_id"),
+                "platform": last_sync_job.get("platform"),
+                "status": last_sync_job.get("status"),
+                "created_at": last_sync_job.get("created_at").isoformat()
+                if last_sync_job.get("created_at")
+                else None,
+                "updated_at": last_sync_job.get("updated_at").isoformat()
+                if last_sync_job.get("updated_at")
+                else None,
+                "games_inserted": last_sync_job.get("game_inserted", 0),
+                "games_updated": last_sync_job.get("game_updated", 0),
+                "game_user_inserted": last_sync_job.get("game_user_inserted", 0),
+                "game_user_updated": last_sync_job.get("game_user_updated", 0),
+            }
+
+        return {
+            "user_id": user_id,
+            "library_stats": {
+                "total_owned_games": total_owned_games,
+                "total_achievements": total_achievements,
+                "total_playcount_hours": round(total_playcount, 2),
+            },
+            "platform_distribution": {
+                "steam": games_by_platform_actual["steam"],
+                "psn": games_by_platform_actual["psn"],
+                "other": games_by_platform_actual["other"],
+            },
+            "wishlist_stats": {"total_games_in_wishlist": total_wishlist_games},
+            "database_stats": {
+                "total_games_in_db": total_games_in_db,
+                "user_coverage_percentage": round(
+                    (total_owned_games / total_games_in_db * 100)
+                    if total_games_in_db > 0
+                    else 0,
+                    2,
+                ),
+            },
+            "last_sync_job": last_sync_info,
+            "platform_stats_summary": [
+                {
+                    "platform": platform.get("platform"),
+                    "game_count": platform.get("game_count", 0),
+                    "earned_achievements": platform.get("earned_achievements", 0),
+                    "play_count": round(platform.get("play_count", 0) / 60, 2)
+                    if platform.get("platform") == "steam"
+                    else platform.get("play_count", 0),
+                    "full_trophies_count": platform.get("full_trophies_count", 0),
+                }
+                for platform in platform_stats
+            ],
+        }
+
+    except Exception as e:
+        logging.error(f"Error getting user stats for user {current_user.id}: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving user statistics: {str(e)}"
+        )

@@ -72,6 +72,16 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                 return ""
             name = name.translate(str.maketrans("", "", string.punctuation))
             return " ".join(name.lower().split())
+        
+        def clean_name(game_name):
+            if "™" in game_name or "®" in game_name:
+                game_name = game_name.replace("™", "").replace("®", "").strip()
+            pattern = re.compile(r"tro(f|ph)[a-z]*", re.IGNORECASE)
+            match = pattern.search(game_name)
+            if match:
+                game_name = game_name[: match.start()].strip()
+            return game_name
+
 
         try:
             try:
@@ -431,13 +441,14 @@ async def sync_job(ctx, user_id, platform, string_job_id):
 
                 for game_doc in games_to_insert:
                     game_id = db["games"].find_one(
-                        {"normalized_name": game_doc["normalized_name"]}
-                    )["_id"]
+                        {"original_name": game_doc["original_name"]}
+                    )["_id"]                    
+                    
                     # print(f"[DEBUG] 29. Game ID: {game_id}, {game_doc['original_name']}, {game_doc['normalized_name']}", flush=True)
                     platform_data = next(
                         (game for game in full_games_dict 
-                        if game["name"] == game_doc["original_name"] or 
-                        (platform == "psn" and game.get("title_name") == game_doc["original_name"])), 
+                        if (game.get("name", "") is not None and clean_name(game.get("name", "")) == game_doc["original_name"]) or 
+                        (platform == "psn" and clean_name(game.get("title_name", "")) == game_doc["original_name"])), 
                         {}
                     )
     
@@ -445,8 +456,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                         # Se non troviamo una corrispondenza diretta, prova con nomi normalizzati
                         platform_data = next(
                             (game for game in full_games_dict 
-                            if normalize_name(game.get("name", "")) == game_doc["normalized_name"] or 
-                            normalize_name(game.get("title_name", "")) == game_doc["normalized_name"]), 
+                            if (game.get("name","") is not None and normalize_name(clean_name(game.get("name", ""))) == game_doc["normalized_name"]) or 
+                            normalize_name(clean_name(game.get("title_name", ""))) == game_doc["normalized_name"]), 
                             {}
                         )
 
@@ -461,6 +472,7 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "play_count": 0,
                             }
                         else:
+                            logger.warning("Skipping....")
                             continue
                                                 
                     game_name = (
