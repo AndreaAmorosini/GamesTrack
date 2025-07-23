@@ -518,7 +518,18 @@ function GameExplorer() {
                   )}
                 </Button>
               </TableCell>
-              <TableCell>Recensioni</TableCell>
+              <TableCell>
+                <Button
+                  layout="link"
+                  onClick={() => handleSortChange('total_rating_count')}
+                  className="flex items-center"
+                >
+                  Recensioni
+                  {sortBy === 'total_rating_count' && (
+                    <span className="ml-1">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                  )}
+                </Button>
+              </TableCell>
               <TableCell>Stato</TableCell>
             </tr>
           </TableHeader>

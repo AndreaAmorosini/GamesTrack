@@ -74,16 +74,13 @@ function SyncJobs() {
   // Funzione per ottenere il badge del status
   const getStatusBadge = (status) => {
     switch (status?.toLowerCase()) {
-      case 'completed':
       case 'success':
         return <Badge type="success">Completato</Badge>
-      case 'failed':
-      case 'error':
+      case 'fail':
         return <Badge type="danger">Fallito</Badge>
-      case 'running':
       case 'in_progress':
         return <Badge type="warning">In Corso</Badge>
-      case 'pending':
+      case 'queued':
         return <Badge type="info">In Attesa</Badge>
       default:
         return <Badge type="default">{status || 'Sconosciuto'}</Badge>
@@ -93,16 +90,13 @@ function SyncJobs() {
   // Funzione per ottenere l'icona del status
   const getStatusIcon = (status) => {
     switch (status?.toLowerCase()) {
-      case 'completed':
       case 'success':
         return <CheckIcon className="w-4 h-4 text-green-500" />
-      case 'failed':
-      case 'error':
+      case 'fail':
         return <XIcon className="w-4 h-4 text-red-500" />
-      case 'running':
       case 'in_progress':
-        return <SyncIcon className="w-4 h-4 text-yellow-500 animate-spin" />
-      case 'pending':
+        return <SyncIcon className="w-4 h-4 text-yellow-500" />
+      case 'queued':
         return <ClockIcon className="w-4 h-4 text-blue-500" />
       default:
         return <ClockIcon className="w-4 h-4 text-gray-500" />
@@ -172,10 +166,10 @@ function SyncJobs() {
               onChange={(e) => setStatusFilter(e.target.value)}
             >
               <option value="">Tutti gli status</option>
-              <option value="completed">Completato</option>
-              <option value="failed">Fallito</option>
-              <option value="running">In Corso</option>
-              <option value="pending">In Attesa</option>
+              <option value="success">Completato</option>
+              <option value="fail">Fallito</option>
+              <option value="in_progress">In Corso</option>
+              <option value="queued">In Attesa</option>
             </Select>
           </div>
           
@@ -330,7 +324,7 @@ function SyncJobs() {
                   Completati
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {jobs.filter(job => job.status === 'completed' || job.status === 'success').length}
+                  {jobs.filter(job => job.status === 'success').length}
                 </p>
               </div>
             </div>
@@ -346,7 +340,7 @@ function SyncJobs() {
                   Falliti
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {jobs.filter(job => job.status === 'failed' || job.status === 'error').length}
+                  {jobs.filter(job => job.status === 'fail').length}
                 </p>
               </div>
             </div>
@@ -362,7 +356,7 @@ function SyncJobs() {
                   In Corso
                 </p>
                 <p className="text-2xl font-semibold text-gray-900 dark:text-white">
-                  {jobs.filter(job => job.status === 'running' || job.status === 'in_progress').length}
+                  {jobs.filter(job => job.status === 'in_progress').length}
                 </p>
               </div>
             </div>

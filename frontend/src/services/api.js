@@ -348,7 +348,7 @@ export const checkSyncStatus = async (jobId) => {
 };
 
 // Funzione per rimuovere un gioco dalla libreria
-export const removeGameFromLibrary = async (gameId, platform = null) => {
+export const removeGameFromLibrary = async (gameId, console = null) => {
     const token = localStorage.getItem('token');
     if (!token) {
         throw new Error('No token found');
@@ -359,8 +359,8 @@ export const removeGameFromLibrary = async (gameId, platform = null) => {
             game_id: gameId
         });
         
-        if (platform) {
-            queryParams.append('platform', platform);
+        if (console !== null) {
+            queryParams.append('console', console);
         }
 
         const response = await fetch(`${API_URL}/users/my-library/remove?${queryParams}`, {
@@ -469,7 +469,7 @@ export const addGameToWishlist = async (igdbId, console) => {
 };
 
 // Funzione per rimuovere un gioco dalla wishlist
-export const removeGameFromWishlist = async (gameId, platform = null) => {
+export const removeGameFromWishlist = async (gameId, console = null) => {
     const token = localStorage.getItem('token');
     if (!token) {
         throw new Error('No token found');
@@ -480,8 +480,8 @@ export const removeGameFromWishlist = async (gameId, platform = null) => {
             game_id: gameId
         });
         
-        if (platform) {
-            queryParams.append('platform', platform);
+        if (console !== null) {
+            queryParams.append('console', console);
         }
 
         const response = await fetch(`${API_URL}/wishlist/remove?${queryParams}`, {

@@ -41,6 +41,9 @@ function MyLibrary() {
   // Stati per le modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [selectedGame, setSelectedGame] = useState(null)
+  // Nuovi stati per la selezione console
+  const [selectedConsoleToRemove, setSelectedConsoleToRemove] = useState(null)
+  const [showConsoleSelectionModal, setShowConsoleSelectionModal] = useState(false)
   
   // Stati per loading e sincronizzazione
   const [isSyncing, setIsSyncing] = useState(false)
@@ -90,6 +93,22 @@ function MyLibrary() {
     }
   }
 
+  // Versione sincrona per il rendering (usa solo la cache)
+  const getConsoleNameSync = (consoleCode) => {
+    // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
+    if (typeof consoleCode === 'string') {
+      return consoleCode
+    }
+    
+    // Se è un numero (ID console), controlla la cache
+    if (consoleNamesCache[consoleCode]) {
+      return consoleNamesCache[consoleCode]
+    }
+    
+    // Se non è in cache, restituisci un placeholder
+    return `Console ${consoleCode}`
+  }
+
   // Funzione per renderizzare le console come array (versione sincrona per la cache)
   const renderConsoles = (game) => {
     const consoles = game.consoles || []
@@ -102,7 +121,7 @@ function MyLibrary() {
       <div className="flex flex-wrap gap-1">
         {consoles.map((console, idx) => (
           <Badge key={idx} type="success">
-            {consoleNamesCache[console] || `Console ${console}`}
+            {getConsoleNameSync(console)}
           </Badge>
         ))}
       </div>
@@ -269,7 +288,14 @@ function MyLibrary() {
   // Gestione eliminazione gioco
   const handleDeleteGame = (game) => {
     setSelectedGame(game)
-    setIsDeleteModalOpen(true)
+    
+    // Se il gioco ha più console, mostra il modal di selezione console
+    if (game.consoles && game.consoles.length > 1) {
+      setShowConsoleSelectionModal(true)
+    } else {
+      // Se ha una sola console o nessuna, mostra direttamente il modal di conferma
+      setIsDeleteModalOpen(true)
+    }
   }
 
   // Gestione conferma eliminazione
@@ -277,18 +303,38 @@ function MyLibrary() {
     if (!selectedGame) return
 
     try {
-      await removeGameFromLibrary(selectedGame.game_id)
+      // Se è stata selezionata una console specifica, rimuovi solo quella console
+      if (selectedConsoleToRemove) {
+        await removeGameFromLibrary(selectedGame.game_id, selectedConsoleToRemove)
+        alert(`Gioco rimosso dalla libreria per ${getConsoleNameSync(selectedConsoleToRemove)}!`)
+      } else {
+        // Altrimenti rimuovi l'intero gioco (comportamento legacy)
+        await removeGameFromLibrary(selectedGame.game_id, null)
+        alert('Gioco rimosso dalla libreria!')
+      }
       
       // Ricarica i giochi per mostrare le modifiche
       await fetchGames()
       
       setIsDeleteModalOpen(false)
+      setShowConsoleSelectionModal(false)
       setSelectedGame(null)
-      
-      alert('Gioco rimosso dalla libreria!')
+      setSelectedConsoleToRemove(null)
     } catch (err) {
       setError('Errore durante la rimozione del gioco: ' + err.message)
     }
+  }
+
+  const handleConsoleSelection = (consoleId) => {
+    setSelectedConsoleToRemove(consoleId)
+    setShowConsoleSelectionModal(false)
+    setIsDeleteModalOpen(true)
+  }
+
+  const handleRemoveAllConsoles = () => {
+    setSelectedConsoleToRemove(null)
+    setShowConsoleSelectionModal(false)
+    setIsDeleteModalOpen(true)
   }
 
   return (
@@ -521,13 +567,63 @@ function MyLibrary() {
         </TableFooter>
       </TableContainer>
 
+      {/* Console Selection Modal */}
+      <Modal isOpen={showConsoleSelectionModal} onClose={() => setShowConsoleSelectionModal(false)}>
+        <ModalHeader>Rimuovi console specifica</ModalHeader>
+        <ModalBody>
+          {selectedGame && (
+            <div>
+              <p className="mb-4">
+                Seleziona la console da rimuovere per <strong>{selectedGame.name}</strong>:
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => handleRemoveAllConsoles()}
+                  layout="outline"
+                  className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                >
+                  Rimuovi tutte le console
+                </Button>
+                {selectedGame.consoles && selectedGame.consoles.length > 0 && (
+                  selectedGame.consoles.map((console, index) => (
+                    <Button
+                      key={index}
+                      onClick={() => handleConsoleSelection(console)}
+                      layout="outline"
+                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                    >
+                      {getConsoleNameSync(console)}
+                    </Button>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <div className="hidden sm:block">
+            <Button layout="outline" onClick={() => setShowConsoleSelectionModal(false)}>
+              Annulla
+            </Button>
+          </div>
+          <div className="block w-full sm:hidden">
+            <Button block size="large" layout="outline" onClick={() => setShowConsoleSelectionModal(false)}>
+              Annulla
+            </Button>
+          </div>
+        </ModalFooter>
+      </Modal>
+
       {/* Modal per confermare eliminazione */}
       <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)}>
         <ModalHeader>Conferma Eliminazione</ModalHeader>
         <ModalBody>
           {selectedGame && (
             <p>
-              Sei sicuro di voler rimuovere <strong>{selectedGame.name}</strong> dalla tua libreria?
+              {selectedConsoleToRemove ? 
+                `Sei sicuro di voler rimuovere "${selectedGame.name}" dalla libreria per ${getConsoleNameSync(selectedConsoleToRemove)}?` :
+                `Sei sicuro di voler rimuovere "${selectedGame.name}" dalla tua libreria?`
+              }
               Questa azione non può essere annullata.
             </p>
           )}

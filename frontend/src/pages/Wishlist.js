@@ -19,6 +19,9 @@ const Wishlist = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [gameToDelete, setGameToDelete] = useState(null);
     const [consoleNamesCache, setConsoleNamesCache] = useState({});
+    // Nuovi stati per la selezione console
+    const [selectedConsoleToRemove, setSelectedConsoleToRemove] = useState(null);
+    const [showConsoleSelectionModal, setShowConsoleSelectionModal] = useState(false);
 
     const platforms = [
         { value: '', label: 'Tutte le piattaforme' },
@@ -107,12 +110,21 @@ const Wishlist = () => {
 
         try {
             setDeleteLoading(gameToDelete._id);
-            // Passa il game_id (che ora è sempre una stringa)
-            await removeGameFromWishlist(gameToDelete.game_id, gameToDelete.platform);
             
-            alert('Gioco rimosso dalla wishlist con successo!');
+            // Se è stata selezionata una console specifica, rimuovi solo quella console
+            if (selectedConsoleToRemove) {
+                await removeGameFromWishlist(gameToDelete.game_id, selectedConsoleToRemove);
+                alert(`Gioco rimosso dalla wishlist per ${getConsoleName(selectedConsoleToRemove)} con successo!`);
+            } else {
+                // Altrimenti rimuovi l'intero gioco (comportamento legacy)
+                await removeGameFromWishlist(gameToDelete.game_id, null);
+                alert('Gioco rimosso dalla wishlist con successo!');
+            }
+            
             setShowDeleteModal(false);
+            setShowConsoleSelectionModal(false);
             setGameToDelete(null);
+            setSelectedConsoleToRemove(null);
             fetchWishlist(); // Ricarica la lista
         } catch (err) {
             console.error('Error removing game from wishlist:', err);
@@ -124,6 +136,25 @@ const Wishlist = () => {
 
     const confirmDelete = (game) => {
         setGameToDelete(game);
+        
+        // Se il gioco ha più console, mostra il modal di selezione console
+        if (game.consoles && game.consoles.length > 1) {
+            setShowConsoleSelectionModal(true);
+        } else {
+            // Se ha una sola console o nessuna, mostra direttamente il modal di conferma
+            setShowDeleteModal(true);
+        }
+    };
+
+    const handleConsoleSelection = (consoleId) => {
+        setSelectedConsoleToRemove(consoleId);
+        setShowConsoleSelectionModal(false);
+        setShowDeleteModal(true);
+    };
+
+    const handleRemoveAllConsoles = () => {
+        setSelectedConsoleToRemove(null);
+        setShowConsoleSelectionModal(false);
         setShowDeleteModal(true);
     };
 
@@ -458,6 +489,58 @@ const Wishlist = () => {
                 )}
             </div>
 
+            {/* Console Selection Modal */}
+            {showConsoleSelectionModal && (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                    <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
+                        <div className="mt-3 text-center">
+                            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900">
+                                <HeartIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 dark:text-white mt-4">
+                                Rimuovi console specifica
+                            </h3>
+                            <div className="mt-2 px-7 py-3">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    Seleziona la console da rimuovere per "{gameToDelete?.name}":
+                                </p>
+                                <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                                    {gameToDelete?.consoles && gameToDelete.consoles.length > 0 && (
+                                        <>
+                                            <Button
+                                                onClick={() => handleRemoveAllConsoles()}
+                                                layout="outline"
+                                                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                            >
+                                                Rimuovi tutte le console
+                                            </Button>
+                                            {gameToDelete.consoles.map((console, index) => (
+                                                <Button
+                                                    key={index}
+                                                    onClick={() => handleConsoleSelection(console)}
+                                                    layout="outline"
+                                                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                >
+                                                    {getConsoleName(console)}
+                                                </Button>
+                                            ))}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex justify-center space-x-4 mt-4">
+                                <Button
+                                    onClick={() => setShowConsoleSelectionModal(false)}
+                                    layout="outline"
+                                >
+                                    Annulla
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Delete Confirmation Modal */}
             {showDeleteModal && (
                 <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -471,7 +554,10 @@ const Wishlist = () => {
                             </h3>
                             <div className="mt-2 px-7 py-3">
                                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    Sei sicuro di voler rimuovere "{gameToDelete?.name}" dalla tua wishlist?
+                                    {selectedConsoleToRemove ? 
+                                        `Sei sicuro di voler rimuovere "${gameToDelete?.name}" dalla wishlist per ${getConsoleName(selectedConsoleToRemove)}?` :
+                                        `Sei sicuro di voler rimuovere "${gameToDelete?.name}" dalla tua wishlist?`
+                                    }
                                     Questa azione non può essere annullata.
                                 </p>
                             </div>
@@ -484,6 +570,64 @@ const Wishlist = () => {
                                 </Button>
                                 <Button
                                     onClick={handleDeleteGame}
+                                    layout="danger"
+                                >
+                                    Rimuovi
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Console Selection Modal */}
+            {showConsoleSelectionModal && (
+                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+                    <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
+                        <div className="mt-3 text-center">
+                            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900">
+                                <HeartIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <h3 className="text-lg font-medium text-gray-900 dark:text-white mt-4">
+                                Rimuovi console specifica
+                            </h3>
+                            <div className="mt-2 px-7 py-3">
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    Seleziona la console da rimuovere per "{gameToDelete?.name}":
+                                </p>
+                                <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                                    {gameToDelete?.consoles && gameToDelete.consoles.length > 0 && (
+                                        <>
+                                            <Button
+                                                onClick={() => handleConsoleSelection(null)}
+                                                layout="outline"
+                                                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                            >
+                                                Rimuovi tutte le console
+                                            </Button>
+                                            {gameToDelete.consoles.map((console, index) => (
+                                                <Button
+                                                    key={index}
+                                                    onClick={() => handleConsoleSelection(console)}
+                                                    layout="outline"
+                                                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                                >
+                                                    {getConsoleName(console)}
+                                                </Button>
+                                            ))}
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex justify-center space-x-4 mt-4">
+                                <Button
+                                    onClick={() => setShowConsoleSelectionModal(false)}
+                                    layout="outline"
+                                >
+                                    Annulla
+                                </Button>
+                                <Button
+                                    onClick={handleRemoveAllConsoles}
                                     layout="danger"
                                 >
                                     Rimuovi

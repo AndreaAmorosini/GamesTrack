@@ -789,13 +789,14 @@ def remove_from_wishlist(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
     platform: str = Query(None, description="Piattaforma specifica da cui rimuovere (opzionale)"),
+    console: int = Query(None, description="Console specifica da rimuovere (opzionale)"),
 ):
     """
     Remove a game from user's wishlist
     """
     try:
         # Debug: log dei parametri ricevuti
-        logging.info(f"Attempting to remove from wishlist - game_id: {game_id}, user_id: {current_user.id}, platform: {platform}")
+        logging.info(f"Attempting to remove from wishlist - game_id: {game_id}, user_id: {current_user.id}, platform: {platform}, console: {console}")
         
         # Prima verifichiamo se il record esiste
         find_query = {"user_id": str(current_user.id)}
@@ -845,17 +846,59 @@ def remove_from_wishlist(
             if platform:
                 query["platform"] = platform
         
-        logging.info(f"Delete query: {query}")
-        result = db["game_user_wishlist"].delete_one(query)
+        # Se è specificata una console, rimuovi solo quella console dall'array
+        if console is not None and existing_record:
+            if "consoles" in existing_record and console in existing_record["consoles"]:
+                # Rimuovi la console specifica dall'array
+                new_consoles = [c for c in existing_record["consoles"] if c != console]
+                
+                if len(new_consoles) == 0:
+                    # Se non rimangono console, elimina l'intero record
+                    logging.info(f"Removing entire record as no consoles remain")
+                    result = db["game_user_wishlist"].delete_one(query)
+                    
+                    if result.deleted_count == 0:
+                        raise HTTPException(
+                            status_code=404, 
+                            detail=f"Console {console} not found in wishlist for this game"
+                        )
+                    
+                    logging.info(f"Successfully deleted record - deleted: {result.deleted_count}")
+                    return {"message": f"Console {console} removed from wishlist"}
+                else:
+                    # Aggiorna l'array delle console
+                    logging.info(f"Updating consoles array: {existing_record['consoles']} -> {new_consoles}")
+                    result = db["game_user_wishlist"].update_one(
+                        query,
+                        {"$set": {"consoles": new_consoles}}
+                    )
+                    
+                    if result.modified_count == 0:
+                        raise HTTPException(
+                            status_code=404, 
+                            detail=f"Console {console} not found in wishlist for this game"
+                        )
+                    
+                    logging.info(f"Successfully updated wishlist - modified: {result.modified_count}")
+                    return {"message": f"Console {console} removed from wishlist"}
+            else:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Console {console} not found in wishlist for this game"
+                )
+        else:
+            # Comportamento legacy: elimina l'intero record
+            logging.info(f"Delete query: {query}")
+            result = db["game_user_wishlist"].delete_one(query)
 
-        if result.deleted_count == 0:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Game not found in wishlist{f' for platform {platform}' if platform else ''}"
-            )
+            if result.deleted_count == 0:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Game not found in wishlist{f' for platform {platform}' if platform else ''}"
+                )
 
-        logging.info(f"Successfully deleted {result.deleted_count} record(s)")
-        return {"message": "Game removed from wishlist"}
+            logging.info(f"Successfully deleted {result.deleted_count} record(s)")
+            return {"message": "Game removed from wishlist"}
 
     except HTTPException:
         raise
@@ -872,6 +915,7 @@ def remove_from_library(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
     platform: str = Query(None, description="Piattaforma specifica da cui rimuovere (opzionale)"),
+    console: int = Query(None, description="Console specifica da rimuovere (opzionale)"),
 ):
     """
     Remove a game from user's library and update platform statistics
@@ -880,30 +924,90 @@ def remove_from_library(
         # Debug: log dei parametri ricevuti
         logging.info(f"Attempting to remove game_id: {game_id}, user_id: {current_user.id}, platform: {platform}")
         
-        # Converti game_id da stringa a ObjectId
+        # Prima prova a trattare game_id come ObjectId della collezione game_user
         try:
             game_object_id = ObjectId(game_id)
+            
+            # Costruisci la query per trovare il gioco
+            find_query = {"user_id": str(current_user.id), "game_id": game_object_id}
+            
+            # Se è specificata una piattaforma, cerca solo in quella piattaforma
+            if platform:
+                find_query["platform"] = platform
+                
+            # Prima leggi i dati del gioco prima di eliminarlo
+            game_record = db["game_user"].find_one(find_query)
+            
+            if not game_record:
+                # Se non trova il record, prova a cercare direttamente per _id
+                find_query = {"user_id": str(current_user.id), "_id": game_object_id}
+                if platform:
+                    find_query["platform"] = platform
+                    
+                game_record = db["game_user"].find_one(find_query)
+                
+                if not game_record:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Game not found in library{f' for platform {platform}' if platform else ''}"
+                    )
+                else:
+                    # Usa _id per la query di eliminazione
+                    delete_query = {"user_id": str(current_user.id), "_id": game_object_id}
+                    if platform:
+                        delete_query["platform"] = platform
+            else:
+                # Usa game_id per la query di eliminazione
+                delete_query = {"user_id": str(current_user.id), "game_id": game_object_id}
+                if platform:
+                    delete_query["platform"] = platform
+
+            # Se è specificata una console, rimuovi solo quella console dall'array
+            if console is not None and game_record:
+                if "consoles" in game_record and console in game_record["consoles"]:
+                    # Rimuovi la console specifica dall'array
+                    new_consoles = [c for c in game_record["consoles"] if c != console]
+                    
+                    if len(new_consoles) == 0:
+                        # Se non rimangono console, elimina l'intero record
+                        logging.info(f"Removing entire record as no consoles remain")
+                        result = db["game_user"].delete_one(delete_query)
+                        
+                        if result.deleted_count == 0:
+                            raise HTTPException(
+                                status_code=404, 
+                                detail=f"Console {console} not found in library for this game"
+                            )
+                        
+                        logging.info(f"Successfully deleted record - deleted: {result.deleted_count}")
+                        return {"message": f"Console {console} removed from library"}
+                    else:
+                        # Aggiorna l'array delle console
+                        logging.info(f"Updating consoles array: {game_record['consoles']} -> {new_consoles}")
+                        result = db["game_user"].update_one(
+                            delete_query,
+                            {"$set": {"consoles": new_consoles}}
+                        )
+                        
+                        if result.modified_count == 0:
+                            raise HTTPException(
+                                status_code=404, 
+                                detail=f"Console {console} not found in library for this game"
+                            )
+                        
+                        logging.info(f"Successfully updated library - modified: {result.modified_count}")
+                        return {"message": f"Console {console} removed from library"}
+                else:
+                    raise HTTPException(
+                        status_code=404, 
+                        detail=f"Console {console} not found in library for this game"
+                    )
+                    
         except Exception as e:
             logging.error(f"Invalid ObjectId format for game_id: {game_id}")
             raise HTTPException(
                 status_code=400, 
                 detail=f"Invalid game_id format: {game_id}"
-            )
-        
-        # Costruisci la query per trovare il gioco
-        find_query = {"user_id": str(current_user.id), "game_id": game_object_id}
-        
-        # Se è specificata una piattaforma, cerca solo in quella piattaforma
-        if platform:
-            find_query["platform"] = platform
-            
-        # Prima leggi i dati del gioco prima di eliminarlo
-        game_record = db["game_user"].find_one(find_query)
-        
-        if not game_record:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"Game not found in library{f' for platform {platform}' if platform else ''}"
             )
         
         # Estrai i dati del gioco per aggiornare le statistiche
@@ -922,8 +1026,8 @@ def remove_from_library(
         
         logging.info(f"Game data to subtract - Platform: {game_platform}, Play count: {game_play_count} (type: {type(game_play_count)}), Trophies: {game_num_trophies} (type: {type(game_num_trophies)})")
         
-        # Elimina il gioco dalla libreria
-        result = db["game_user"].delete_one(find_query)
+        # Elimina il gioco dalla libreria usando la query corretta
+        result = db["game_user"].delete_one(delete_query)
         
         if result.deleted_count == 0:
             raise HTTPException(
@@ -1712,6 +1816,7 @@ def get_user_library(
             {
                 "$project": {
                     "_id": 0,
+                    "game_id": {"$toString": "$_id"},  # Converti ObjectId in stringa
                     "name": 1,
                     "cover_image": 1,
                     "own_platforms": "$platforms_data.platform",
@@ -1742,13 +1847,38 @@ def get_user_library(
                                                     {"$divide": ["$$pd.play_count", 60]},
                                                     2,
                                                 ]
-                                            },  # Converti Steam da minuti a ore
-                                            "else": "$$pd.play_count",
+                                            },  # Converti Steam da minuti a ore con 2 decimali
+                                            "else": {
+                                                "$round": [
+                                                    {"$divide": ["$$pd.play_count", 60]},
+                                                    2,
+                                                ]
+                                            },  # Converti altri da minuti a ore con 2 decimali
                                         }
                                     }
                                 },
                             }
                         }
+                    },
+                    "total_play_count": {
+                        "$round": [
+                            {
+                                "$sum": {
+                                    "$map": {
+                                        "input": "$platforms_data",
+                                        "as": "pd",
+                                        "in": {
+                                            "$cond": {
+                                                "if": {"$eq": ["$$pd.platform", "steam"]},
+                                                "then": {"$divide": ["$$pd.play_count", 60]},  # Steam: minuti -> ore
+                                                "else": {"$divide": ["$$pd.play_count", 60]}  # Altri: minuti -> ore
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            2
+                        ]
                     },
                     "total_num_trophies": {"$sum": "$platforms_data.num_trophies"},
                 }
@@ -1778,7 +1908,14 @@ def get_user_library(
         )
 
         # Esecuzione della pipeline
-        result = list(db["game_user"].aggregate(pipeline))
+        try:
+            result = list(db["game_user"].aggregate(pipeline))
+        except Exception as e:
+            logging.error(f"Error in library aggregation pipeline: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error processing library data: {str(e)}"
+            )
 
         # Formattazione della risposta finale
         if not result or not result[0]["library"]:
