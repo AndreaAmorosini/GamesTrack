@@ -363,8 +363,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": game_id,
                                 "user_id": str(user_id),
                                 "platform": platform,
-                                "num_trophies": game.get("earnedTrophy", 0),
-                                "play_count": game.get("play_count", 0),
+                                "num_trophies": int(game.get("earnedTrophy", 0)),
+                                "play_count": int(game.get("play_count", 0)),
                                 "console": 6 if platform == "steam" else game.get("console", 9999),
                             },
                         )
@@ -375,8 +375,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": exist["game_id"],
                                 "user_id": exist["user_id"],
                                 "platform": exist["platform"],
-                                "num_trophies": game.get("earnedTrophy", 0),
-                                "play_count": game.get("play_count", 0),
+                                "num_trophies": int(game.get("earnedTrophy", 0)),
+                                "play_count": int(game.get("play_count", 0)),
                                 "console": 6 if platform == "steam" else game.get("console", 9999),
                             },
                         )
@@ -500,8 +500,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": game_id,
                                 "user_id": str(user_id),
                                 "platform": platform,
-                                "num_trophies": platform_data.get("earnedTrophy", 0),
-                                "play_count": platform_data.get("play_count", 0),
+                                "num_trophies": int(platform_data.get("earnedTrophy", 0)),
+                                "play_count": int(platform_data.get("play_count", 0)),
                                 "console": 6 if platform == "steam" else platform_data.get("console", 9999),
                             },
                         )
@@ -511,8 +511,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": exist["game_id"],
                                 "user_id": exist["user_id"],
                                 "platform": exist["platform"],
-                                "num_trophies": platform_data.get("earnedTrophy", 0),
-                                "play_count": platform_data.get("play_count", 0),
+                                "num_trophies": int(platform_data.get("earnedTrophy", 0)),
+                                "play_count": int(platform_data.get("play_count", 0)),
                                 "console": 6 if platform == "steam" else platform_data.get("console", 9999),
                             },
                         )
@@ -570,8 +570,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                             },
                             {
                                 "$set": {
-                                    "num_trophies": g["num_trophies"],
-                                    "play_count": g["play_count"],
+                                    "num_trophies": int(g["num_trophies"]),
+                                    "play_count": int(g["play_count"]),
                                 }
                             },
                         )
@@ -601,9 +601,9 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                     {"user_id": str(user_id), "platform": platform},
                     {
                         "$set": {
-                            "game_count": stats.get("gameCount", 0),
-                            "earned_achievements": stats.get("earnedTrophyCount", 0),
-                            "play_count": stats.get("totPlayTimeCount", 0),
+                            # "game_count": stats.get("gameCount", 0),
+                            # "earned_achievements": stats.get("earnedTrophyCount", 0),
+                            # "play_count": stats.get("totPlayTimeCount", 0),
                             "full_trophies_count": stats.get("completeTrophyCount", 0),
                         }
                     },

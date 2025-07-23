@@ -7,6 +7,7 @@ from utils.igdb_api import IGDBAutoAuthClient
 import logging
 import datetime
 
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -158,9 +159,9 @@ def init_mongo():
                         "user_id": user_id,
                         "platform_id": "steam_id",
                         "api_key": "steam_api_key",
-                        "game_count": 10, # total games played on this platform
-                        "earned_achievements": 5, # total achievements earned
-                        "play_count": 10, # total play count
+                        # "game_count": 10, # total games played on this platform
+                        # "earned_achievements": 5, # total achievements earned
+                        # "play_count": 10, # total play count
                         "full_trophies_count": 0, # total full trophies count
                     }
                 )
@@ -171,9 +172,9 @@ def init_mongo():
                         "user_id": user_id,
                         "platform_id": "psn_id",
                         "api_key": "psn_api_key",
-                        "game_count": 20, # total games played on this platform
-                        "earned_achievements": 55, # total achievements earned
-                        "play_count": 10, # total play count
+                        # "game_count": 20, # total games played on this platform
+                        # "earned_achievements": 55, # total achievements earned
+                        # "play_count": 10, # total play count
                         "full_trophies_count": 1, # total full trophies count
                     }
                 )

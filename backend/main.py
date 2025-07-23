@@ -130,9 +130,9 @@ def register_user(user: User, db=Depends(get_db)):
                 "platform_id": user.steam,
                 "api_key": user.steam_api_key,
                 "steam_id": user.steam_id,
-                "game_count": 0,
-                "earned_achievements": 0,
-                "play_count": 0,
+                # "game_count": 0,
+                # "earned_achievements": 0,
+                # "play_count": 0,
                 "full_trophies_count": 0,
             }
             try:
@@ -149,9 +149,9 @@ def register_user(user: User, db=Depends(get_db)):
                 "user_id": user_id,
                 "platform_id": user.psn,
                 "api_key": user.psn_api_key,
-                "game_count": 0,
-                "earned_achievements": 0,
-                "play_count": 0,
+                # "game_count": 0,
+                # "earned_achievements": 0,
+                # "play_count": 0,
                 "full_trophies_count": 0,
             }
             try:
@@ -215,9 +215,9 @@ def update_user(
                     "platform_id": update.steam,
                     "api_key": update.steam_api_key,
                     "steam_id": update.steam_id,
-                    "game_count": 0,
-                    "earned_achievements": 0,
-                    "play_count": 0,
+                    # "game_count": 0,
+                    # "earned_achievements": 0,
+                    # "play_count": 0,
                     "full_trophies_count": 0,
                 }
             )
@@ -244,9 +244,9 @@ def update_user(
                     "user_id": str(current_user.id),
                     "platform_id": update.psn,
                     "api_key": update.psn_api_key,  # Placeholder for future API key
-                    "game_count": 0,
-                    "earned_achievements": 0,
-                    "play_count": 0,
+                    # "game_count": 0,
+                    # "earned_achievements": 0,
+                    # "play_count": 0,
                     "full_trophies_count": 0,
                 }
             )    
@@ -1038,57 +1038,55 @@ def remove_from_library(
                 detail=f"Game not found in library{f' for platform {platform}' if platform else ''}"
             )
         
-        # Aggiorna le statistiche nella collezione platforms-users
-        platform_stats_query = {
-            "user_id": str(current_user.id),
-            "platform": game_platform
-        }
+        # # Aggiorna le statistiche nella collezione platforms-users
+        # platform_stats_query = {
+        #     "user_id": str(current_user.id),
+        #     "platform": game_platform
+        # }
         
         # Trova il record delle statistiche della piattaforma
-        platform_stats = db["platforms-users"].find_one(platform_stats_query)
+        # platform_stats = db["platforms-users"].find_one(platform_stats_query)
         
-        if platform_stats:
-            logging.info(f"Platform stats before conversion: {platform_stats}")
+        # if platform_stats:
+        #     logging.info(f"Platform stats before conversion: {platform_stats}")
             
-            # Converti i valori in interi per evitare errori di tipo
-            try:
-                current_game_count = int(platform_stats.get("game_count", 0))
-                current_earned_achievements = int(platform_stats.get("earned_achievements", 0))
-                current_play_count = int(platform_stats.get("play_count", 0))
+        #     # Converti i valori in interi per evitare errori di tipo
+        #     try:
+        #         current_game_count = int(platform_stats.get("game_count", 0))
+        #         current_earned_achievements = int(platform_stats.get("earned_achievements", 0))
+        #         current_play_count = int(platform_stats.get("play_count", 0))
                 
-                logging.info(f"Converted values - game_count: {current_game_count} (type: {type(current_game_count)}), earned_achievements: {current_earned_achievements} (type: {type(current_earned_achievements)}), play_count: {current_play_count} (type: {type(current_play_count)})")
+        #         logging.info(f"Converted values - game_count: {current_game_count} (type: {type(current_game_count)}), earned_achievements: {current_earned_achievements} (type: {type(current_earned_achievements)}), play_count: {current_play_count} (type: {type(current_play_count)})")
                 
-                # Calcola i nuovi valori sottraendo i dati del gioco eliminato
-                new_game_count = max(0, current_game_count - 1)  # Sottrai 1 gioco
-                new_earned_achievements = max(0, current_earned_achievements - game_num_trophies)
-                new_play_count = max(0, current_play_count - game_play_count)
+        #         # Calcola i nuovi valori sottraendo i dati del gioco eliminato
+        #         new_game_count = max(0, current_game_count - 1)  # Sottrai 1 gioco
+        #         new_earned_achievements = max(0, current_earned_achievements - game_num_trophies)
+        #         new_play_count = max(0, current_play_count - game_play_count)
                 
-                logging.info(f"Calculated new values - game_count: {new_game_count}, earned_achievements: {new_earned_achievements}, play_count: {new_play_count}")
+        #         logging.info(f"Calculated new values - game_count: {new_game_count}, earned_achievements: {new_earned_achievements}, play_count: {new_play_count}")
                 
-            except (ValueError, TypeError) as e:
-                logging.error(f"Error converting platform stats to int: {e}")
-                logging.error(f"Platform stats values: game_count={platform_stats.get('game_count')}, earned_achievements={platform_stats.get('earned_achievements')}, play_count={platform_stats.get('play_count')}")
-                raise HTTPException(
-                    status_code=500, 
-                    detail=f"Error converting platform statistics: {str(e)}"
-                )
+        #     except (ValueError, TypeError) as e:
+        #         logging.error(f"Error converting platform stats to int: {e}")
+        #         logging.error(f"Platform stats values: game_count={platform_stats.get('game_count')}, earned_achievements={platform_stats.get('earned_achievements')}, play_count={platform_stats.get('play_count')}")
+        #         raise HTTPException(
+        #             status_code=500, 
+        #             detail=f"Error converting platform statistics: {str(e)}"
+        #         )
             
             # Aggiorna le statistiche
-            update_result = db["platforms-users"].update_one(
-                platform_stats_query,
-                {
-                    "$set": {
-                        "game_count": new_game_count,
-                        "earned_achievements": new_earned_achievements,
-                        "play_count": new_play_count
-                    }
-                }
-            )
-            
-            logging.info(f"Updated platform stats - New values: games={new_game_count}, trophies={new_earned_achievements}, play_time={new_play_count}")
-            
-            if update_result.modified_count == 0:
-                logging.warning("No platform stats record was updated")
+            # update_result = db["platforms-users"].update_one(
+            #     platform_stats_query,
+            #     {
+            #         "$set": {
+            #             "game_count": new_game_count,
+            #             "earned_achievements": new_earned_achievements,
+            #             "play_count": new_play_count
+            #         }
+            #     }
+            # )
+                        
+            # if update_result.modified_count == 0:
+            #     logging.warning("No platform stats record was updated")
         else:
             logging.warning(f"No platform stats found for user {current_user.id} and platform {game_platform}")
 
@@ -1705,11 +1703,36 @@ def get_user_platforms_stats(
     db=Depends(get_db)
 ):
     """Get user statistics for all platforms"""
-    try:
-        # Trova tutte le piattaforme collegate all'utente
-        platforms = list(db["platforms-users"].find({"user_id": str(current_user.id)}))
+    try:        
+        platform_stats_pipeline = [
+            {"$match": {"user_id": str(current_user.id)}},
+            {
+                "$group": {
+                    "_id": "$platform",
+                    "game_count": {"$sum": 1},
+                    "earned_achievements": {"$sum": {"$toInt": "$num_trophies"}},
+                    "total_play_count": {"$sum": {"$toInt": "$play_count"}}
+                }
+            },
+            {
+                "$project": {
+                    "platform": "$_id",
+                    "game_count": 1,
+                    "earned_achievements": 1,
+                    "play_count": "$total_play_count",
+                    "_id": 0
+                }
+            }
+        ]
         
-        # Calcola le statistiche totali
+        platform_aggregation_results = list(db["game_user"].aggregate(platform_stats_pipeline))
+        
+        # Get additional platform data from platforms-users collection (for API keys, platform_id, etc.)
+        platforms_users_data = list(db["platforms-users"].find({"user_id": str(current_user.id)}))
+        platforms_users_map = {p["platform"]: p for p in platforms_users_data}
+        
+        # Merge aggregated stats with platform-users data
+        platforms = []
         total_stats = {
             "total_games": 0,
             "total_trophies": 0,
@@ -1717,21 +1740,35 @@ def get_user_platforms_stats(
             "completed_games": 0
         }
         
-        # Aggiungi le statistiche di ogni piattaforma
-        for platform in platforms:
-            total_stats["total_games"] += platform.get("game_count", 0)
-            total_stats["total_trophies"] += platform.get("earned_achievements", 0)
-            play_time = platform.get("play_count", 0)
-
-            if platform.get("platform") == "steam":
-                play_time = round(play_time / 60, 2)  # Converti minuti in ore
-            total_stats["total_play_time"] += play_time
+        for platform_data in platform_aggregation_results:
+            platform_name = platform_data.get("platform", "other")
+            game_count = platform_data.get("game_count", 0)
+            earned_achievements = platform_data.get("earned_achievements", 0)
+            play_count = platform_data.get("play_count", 0)
             
-            total_stats["completed_games"] += platform.get("full_trophies_count", 0)
+            # Convert Steam minutes to hours for consistency
+            if platform_name == "steam":
+                play_count = int(play_count / 60)
             
-            # Converti ObjectId in stringa per la serializzazione JSON
-            platform["_id"] = str(platform["_id"])
-        
+            # Get additional data from platforms-users collection
+            platform_user_data = platforms_users_map.get(platform_name, {})
+            
+            platform_info = {
+                "platform": platform_name,
+                "game_count": game_count,
+                "earned_achievements": earned_achievements,
+                "play_count": play_count,
+                "full_trophies_count": platform_user_data.get("full_trophies_count", 0)
+            }
+            
+            platforms.append(platform_info)
+            
+            # Calculate totals
+            total_stats["total_games"] += game_count
+            total_stats["total_trophies"] += earned_achievements
+            total_stats["total_play_time"] += play_count
+            total_stats["completed_games"] += platform_user_data.get("full_trophies_count", 0)
+                        
         return {
             "platforms": platforms,
             "total_stats": total_stats
@@ -1742,8 +1779,7 @@ def get_user_platforms_stats(
         raise HTTPException(
             status_code=500,
             detail=f"Error retrieving user platforms statistics: {str(e)}"
-        )
-# END FIX LUIGI
+        )# END FIX LUIGI
 
 
 @app.get("/users/my-library", response_model=dict)
@@ -1974,50 +2010,101 @@ def get_user_stats(
 
         #Total owned games
         total_owned_games = db["game_user"].count_documents({"user_id": user_id})
-
-        #Total achievements and playtime from platforms-users
-        platform_stats = list(db["platforms-users"].find({"user_id": user_id}))
-
+        
+        platform_stats_pipeline = [
+            {"$match": {"user_id": user_id}},
+            {
+                "$group": {
+                    "_id": "$platform",
+                    "game_count": {"$sum": 1},
+                    "total_achievements": {"$sum": {"$toInt": "$num_trophies"}},
+                    "total_play_count": {"$sum": {"$toInt": "$play_count"}}
+                }
+            },
+            {
+                "$project": {
+                    "platform": "$_id",
+                    "game_count": 1,
+                    "total_achievements": 1,
+                    "total_play_count": 1,
+                    "_id": 0
+                }
+            }
+        ]
+        
+        platform_aggregation_results = list(db["game_user"].aggregate(platform_stats_pipeline))
+        
+        # Calculate totals and platform distribution
         total_achievements = 0
         total_playcount = 0
         games_by_platform = {"steam": 0, "psn": 0, "other": 0}
-
-        for platform in platform_stats:
-            total_achievements += platform.get("earned_achievements", 0)
-            play_count = platform.get("play_count", 0)
-
-            # Convert Steam minutes to hours
-            if platform.get("platform") == "steam":
-                play_count = round(play_count / 60, 2)
-
+        achievements_by_platform = {"steam": 0, "psn": 0, "other": 0}
+        play_count_by_platform = {"steam": 0, "psn": 0, "other": 0}
+        
+        for platform_data in platform_aggregation_results:
+            platform_name = platform_data.get("platform", "other")
+            game_count = platform_data.get("game_count", 0)
+            achievements = platform_data.get("total_achievements", 0)
+            play_count = platform_data.get("total_play_count", 0)
+            
+            # Convert Steam minutes to hours for consistency
+            if platform_name == "steam":
+                play_count = int(play_count / 60)
+            
+            total_achievements += achievements
             total_playcount += play_count
-
-            # Count games by platform
-            platform_name = platform.get("platform", "other")
+                        
+            # Update platform distribution
             if platform_name in games_by_platform:
-                games_by_platform[platform_name] = platform.get("game_count", 0)
+                games_by_platform[platform_name] = game_count
+                achievements_by_platform[platform_name] = achievements
+                play_count_by_platform[platform_name] = play_count
             else:
-                games_by_platform["other"] += platform.get("game_count", 0)
+                games_by_platform["other"] += game_count
+                achievements_by_platform["other"] += achievements
+                play_count_by_platform["other"] += play_count
 
-        # games by platform from game_user
-        platform_distribution = list(
-            db["game_user"].aggregate(
-                [
-                    {"$match": {"user_id": user_id}},
-                    {"$group": {"_id": "$platform", "count": {"$sum": 1}}},
-                    {"$project": {"platform": "$_id", "count": 1, "_id": 0}},
-                ]
-            )
-        )
+        platform_stats = list(db["platforms-users"].find({"user_id": user_id}))
+        platinum_count = 0
+        #extract full achivement count from platform_stats for platform psn if present
+        platform_stats = [
+            {
+                "platform": platform.get("platform"),
+                "game_count": platform.get("game_count", 0),
+                "earned_achievements": platform.get("earned_achievements", 0),
+                "play_count": platform.get("play_count", 0),
+                "full_trophies_count": platform.get("full_trophies_count", 0),
+            }
+            for platform in platform_stats
+        ]
+        #Check if psn platform present
+        for platform in platform_stats:
+            if platform.get("platform") == "psn":
+                platinum_count = platform.get("full_trophies_count", 0)
+                break        
 
-        # Convert to dictionary
-        games_by_platform_actual = {"steam": 0, "psn": 0, "other": 0}
-        for item in platform_distribution:
-            platform_name = item.get("platform", "other")
-            if platform_name in games_by_platform_actual:
-                games_by_platform_actual[platform_name] = item.get("count", 0)
-            else:
-                games_by_platform_actual["other"] += item.get("count", 0)
+        # Prepare the platform distribution data
+        data_by_platform = {
+            "psn": {
+                "game_count": games_by_platform["psn"],
+                "earned_achievements": achievements_by_platform["psn"],
+                "play_count": play_count_by_platform["psn"],
+                "full_trophies_count": platinum_count,
+            },
+            "steam": {
+                "game_count": games_by_platform["steam"],
+                "earned_achievements": achievements_by_platform["steam"],
+                "play_count": play_count_by_platform["steam"],
+                "full_trophies_count": 0,
+            },
+            "other": {
+                "game_count": games_by_platform["other"],
+                "earned_achievements": achievements_by_platform["other"],
+                "play_count": play_count_by_platform["other"],
+                "full_trophies_count": 0,
+            },
+        }
+        #Total achievements and playtime from platforms-users
 
         #Total games in wishlist
         total_wishlist_games = db["game_user_wishlist"].count_documents(
@@ -2059,9 +2146,9 @@ def get_user_stats(
                 "total_playcount_hours": round(total_playcount, 2),
             },
             "platform_distribution": {
-                "steam": games_by_platform_actual["steam"],
-                "psn": games_by_platform_actual["psn"],
-                "other": games_by_platform_actual["other"],
+                "steam": games_by_platform["steam"],
+                "psn": games_by_platform["psn"],
+                "other": games_by_platform["other"],
             },
             "wishlist_stats": {"total_games_in_wishlist": total_wishlist_games},
             "database_stats": {
@@ -2075,16 +2162,8 @@ def get_user_stats(
             },
             "last_sync_job": last_sync_info,
             "platform_stats_summary": [
-                {
-                    "platform": platform.get("platform"),
-                    "game_count": platform.get("game_count", 0),
-                    "earned_achievements": platform.get("earned_achievements", 0),
-                    "play_count": round(platform.get("play_count", 0) / 60, 2)
-                    if platform.get("platform") == "steam"
-                    else platform.get("play_count", 0),
-                    "full_trophies_count": platform.get("full_trophies_count", 0),
-                }
-                for platform in platform_stats
+                {"platform": platform_name, **platform_data}
+                for platform_name, platform_data in data_by_platform.items()
             ],
         }
 
