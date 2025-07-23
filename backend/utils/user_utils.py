@@ -14,7 +14,7 @@ from bson import ObjectId
 # openssl rand -hex 32
 SECRET_KEY = "7e333f93fa30e9ece2038769a4a84c3f0bf6360d9e74e603cf0cbd8155a4b79d"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 0.1
+ACCESS_TOKEN_EXPIRE_MINUTES = 10080 #7 Days
 
 
 class Token(BaseModel):

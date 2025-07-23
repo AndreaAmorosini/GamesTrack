@@ -328,7 +328,7 @@ function Dashboard() {
     <>
       <PageTitle>Dashboard</PageTitle>
 
-      <CTA />
+      {/* <CTA /> */}
 
       {/* Cards con statistiche principali */}
       <div className="grid gap-6 mb-8 md:grid-cols-2 xl:grid-cols-4">
