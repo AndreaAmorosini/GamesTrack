@@ -41,7 +41,7 @@ function GameSearch() {
   const [isConsoleModalOpen, setIsConsoleModalOpen] = useState(false)
   const [selectedGame, setSelectedGame] = useState(null)
   const [selectedAction, setSelectedAction] = useState('') // 'wishlist' o 'library'
-  const [selectedConsole, setSelectedConsole] = useState(null)
+  const [selectedConsoles, setSelectedConsoles] = useState([]) // Array di console selezionate
   const [alreadyAddedConsoles, setAlreadyAddedConsoles] = useState([])
   
   const resultsPerPage = 10
@@ -64,7 +64,7 @@ function GameSearch() {
   const openConsoleModal = async (game, action) => {
     setSelectedGame(game)
     setSelectedAction(action)
-    setSelectedConsole(null)
+    setSelectedConsoles([]) // Reset delle console selezionate
     setIsConsoleModalOpen(true)
     
     // Carica le console già aggiunte per questo gioco
@@ -82,28 +82,51 @@ function GameSearch() {
     }
   }
 
+  // Funzione per gestire la selezione/deselezione di una console
+  const handleConsoleToggle = (consoleId) => {
+    setSelectedConsoles(prev => {
+      if (prev.includes(consoleId)) {
+        return prev.filter(id => id !== consoleId)
+      } else {
+        return [...prev, consoleId]
+      }
+    })
+  }
+
   // Funzione per chiudere la modal
   const closeConsoleModal = () => {
     setIsConsoleModalOpen(false)
     setSelectedGame(null)
     setSelectedAction('')
-    setSelectedConsole(null)
+    setSelectedConsoles([])
   }
 
   // Funzione per confermare l'aggiunta del gioco
   const confirmAddGame = async () => {
-    if (!selectedGame || !selectedConsole) return
+    if (!selectedGame || selectedConsoles.length === 0) return
 
     try {
-      if (selectedAction === 'wishlist') {
-        setWishlistLoading(prev => ({ ...prev, [selectedGame.igdb_id]: true }))
-        await addGameToWishlist(selectedGame.igdb_id, selectedConsole)
-        alert(`${selectedGame.name} aggiunto alla wishlist per ${getConsoleName(selectedConsole)}!`)
-      } else if (selectedAction === 'library') {
-        setLibraryLoading(prev => ({ ...prev, [selectedGame.igdb_id]: true }))
-        await addGameToLibrary(selectedGame.igdb_id, selectedConsole)
-        alert(`${selectedGame.name} aggiunto alla libreria per ${getConsoleName(selectedConsole)}!`)
+      // Aggiungi il gioco per ogni console selezionata
+      for (const consoleId of selectedConsoles) {
+        if (selectedAction === 'wishlist') {
+          setWishlistLoading(prev => ({ ...prev, [selectedGame.igdb_id]: true }))
+          await addGameToWishlist(selectedGame.igdb_id, consoleId)
+        } else if (selectedAction === 'library') {
+          setLibraryLoading(prev => ({ ...prev, [selectedGame.igdb_id]: true }))
+          await addGameToLibrary(selectedGame.igdb_id, consoleId)
+        }
       }
+      
+      // Emetti un evento custom per notificare l'aggiunta del gioco
+      const event = new CustomEvent('gameLibraryChanged', {
+        detail: {
+          action: selectedAction,
+          gameId: selectedGame.igdb_id,
+          consoles: selectedConsoles
+        }
+      });
+      window.dispatchEvent(event);
+      
       closeConsoleModal()
     } catch (err) {
       console.error(`Error adding to ${selectedAction}:`, err)
@@ -488,14 +511,14 @@ function GameSearch() {
 
       {/* Modal per la selezione della console */}
       <Modal isOpen={isConsoleModalOpen} onClose={closeConsoleModal}>
-        <ModalHeader>
+        <ModalHeader className="text-center">
           Seleziona Console per {selectedGame?.name}
         </ModalHeader>
         <ModalBody>
           {selectedGame ? (
             <div>
-              <p className="mb-4 text-gray-600 dark:text-gray-400">
-                Seleziona la console per cui vuoi aggiungere questo gioco alla {selectedAction === 'wishlist' ? 'wishlist' : 'libreria'}:
+              <p className="mb-4 text-gray-600 dark:text-gray-400 text-center">
+                Seleziona le console per cui vuoi aggiungere questo gioco alla {selectedAction === 'wishlist' ? 'wishlist' : 'libreria'}:
               </p>
               
               <div className="space-y-2">
@@ -511,11 +534,9 @@ function GameSearch() {
                       }`}
                     >
                       <input
-                        type="radio"
-                        name="console"
-                        value={console.id}
-                        checked={selectedConsole === console.id}
-                        onChange={(e) => setSelectedConsole(parseInt(e.target.value))}
+                        type="checkbox"
+                        checked={selectedConsoles.includes(console.id)}
+                        onChange={() => handleConsoleToggle(console.id)}
                         disabled={isAlreadyAdded}
                         className="mr-3"
                       />
@@ -533,7 +554,7 @@ function GameSearch() {
               </div>
               
               {getAvailableConsoles(selectedGame).length === 0 && (
-                <p className="text-yellow-600 dark:text-yellow-400 text-sm">
+                <p className="text-yellow-400 text-sm">
                   Nessuna console disponibile per questo gioco.
                 </p>
               )}
@@ -544,13 +565,11 @@ function GameSearch() {
             </p>
           )}
         </ModalBody>
-        <ModalFooter>
-          <Button layout="outline" onClick={closeConsoleModal}>
-            Annulla
-          </Button>
+        <ModalFooter className="flex justify-center">
           <Button 
             onClick={confirmAddGame}
-            disabled={!selectedConsole || getAvailableConsoles(selectedGame).length === 0 || alreadyAddedConsoles.includes(selectedConsole)}
+            disabled={selectedConsoles.length === 0 || getAvailableConsoles(selectedGame).length === 0}
+            className="bg-blue-600 hover:bg-blue-700"
           >
             {selectedAction === 'wishlist' ? 'Aggiungi alla Wishlist' : 'Aggiungi alla Libreria'}
           </Button>

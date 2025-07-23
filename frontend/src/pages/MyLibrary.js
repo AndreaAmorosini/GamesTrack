@@ -211,6 +211,36 @@ function MyLibrary() {
     fetchGames()
   }, [page, selectedPlatform, sortBy, sortOrder])
 
+  // Ascolta gli eventi di modifica della libreria
+  useEffect(() => {
+    const handleLibraryChange = () => {
+      // Aggiorna le statistiche
+      const updateStats = async () => {
+        try {
+          const platformStats = await getUserPlatformStats()
+          const totalStats = platformStats.total_stats || {}
+          setStats({
+            totalGames: totalStats.total_games || 0,
+            totalTrophies: totalStats.total_trophies || 0,
+            totalPlayTime: totalStats.total_play_time || 0,
+            completedGames: totalStats.completed_games || 0
+          })
+        } catch (statsError) {
+          console.error('Errore nel caricamento delle statistiche:', statsError)
+        }
+      }
+      updateStats()
+    }
+
+    // Aggiungi l'event listener
+    window.addEventListener('gameLibraryChanged', handleLibraryChange)
+
+    // Rimuovi l'event listener quando il componente viene smontato
+    return () => {
+      window.removeEventListener('gameLibraryChanged', handleLibraryChange)
+    }
+  }, [])
+
   // Gestione cambio pagina
   const onPageChange = (p) => {
     setPage(p)
@@ -306,11 +336,9 @@ function MyLibrary() {
       // Se è stata selezionata una console specifica, rimuovi solo quella console
       if (selectedConsoleToRemove) {
         await removeGameFromLibrary(selectedGame.game_id, selectedConsoleToRemove)
-        alert(`Gioco rimosso dalla libreria per ${getConsoleNameSync(selectedConsoleToRemove)}!`)
       } else {
         // Altrimenti rimuovi l'intero gioco (comportamento legacy)
         await removeGameFromLibrary(selectedGame.game_id, null)
-        alert('Gioco rimosso dalla libreria!')
       }
       
       // Ricarica i giochi per mostrare le modifiche
@@ -476,6 +504,7 @@ function MyLibrary() {
             <TableRow>
               <TableCell>Gioco</TableCell>
               <TableCell>Console</TableCell>
+              <TableCell>Piattaforme</TableCell>
               <TableCell>Tempo di Gioco</TableCell>
               <TableCell>Trofei</TableCell>
               <TableCell>Azioni</TableCell>
@@ -484,7 +513,7 @@ function MyLibrary() {
           <TableBody>
             {games.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
+                <TableCell colSpan={6} className="text-center py-8">
                   <div className="text-gray-500 dark:text-gray-400">
                     {isLoading ? (
                       <p>Caricamento giochi...</p>
@@ -502,15 +531,6 @@ function MyLibrary() {
                 <TableRow key={i}>
                   <TableCell>
                     <div className="flex items-center text-sm">
-
-                      {/* {game.cover_image && (
-                        <img
-                          className="hidden w-12 h-12 rounded mr-3 md:block"
-                          src={game.cover_image}
-                          alt={game.name}
-                        />
-                      )} */}
-
                       <img
                         className="hidden w-12 h-12 rounded mr-3 md:block"
                         src={game.cover_image || '/default_cover.png'}
@@ -520,8 +540,6 @@ function MyLibrary() {
                           e.target.src = '/default_cover.png' // Percorso immagine di fallback
                         }}
                       />
-
-
                       <div>
                         <p className="font-semibold">{game.name}</p>
                       </div>
@@ -529,6 +547,15 @@ function MyLibrary() {
                   </TableCell>
                   <TableCell>
                     {renderConsoles(game)}
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {game.own_platforms && game.own_platforms.map((platform, idx) => (
+                        <Badge key={idx} type="neutral">
+                          {platform}
+                        </Badge>
+                      ))}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <span className="text-sm">
@@ -569,28 +596,23 @@ function MyLibrary() {
 
       {/* Console Selection Modal */}
       <Modal isOpen={showConsoleSelectionModal} onClose={() => setShowConsoleSelectionModal(false)}>
-        <ModalHeader>Rimuovi console specifica</ModalHeader>
+        <ModalHeader className="text-center">
+          Rimuovi console specifica
+        </ModalHeader>
         <ModalBody>
           {selectedGame && (
             <div>
-              <p className="mb-4">
+              <p className="mb-4 text-gray-600 dark:text-gray-400 text-center">
                 Seleziona la console da rimuovere per <strong>{selectedGame.name}</strong>:
               </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  onClick={() => handleRemoveAllConsoles()}
-                  layout="outline"
-                  className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                >
-                  Rimuovi tutte le console
-                </Button>
+              <div className="flex flex-col space-y-2 mb-6">
                 {selectedGame.consoles && selectedGame.consoles.length > 0 && (
                   selectedGame.consoles.map((console, index) => (
                     <Button
                       key={index}
                       onClick={() => handleConsoleSelection(console)}
                       layout="outline"
-                      className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                      className="w-full text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                     >
                       {getConsoleNameSync(console)}
                     </Button>
@@ -600,48 +622,40 @@ function MyLibrary() {
             </div>
           )}
         </ModalBody>
-        <ModalFooter>
-          <div className="hidden sm:block">
-            <Button layout="outline" onClick={() => setShowConsoleSelectionModal(false)}>
-              Annulla
-            </Button>
-          </div>
-          <div className="block w-full sm:hidden">
-            <Button block size="large" layout="outline" onClick={() => setShowConsoleSelectionModal(false)}>
-              Annulla
-            </Button>
-          </div>
+        <ModalFooter className="flex justify-center">
+          <Button
+            onClick={() => handleRemoveAllConsoles()}
+            layout="outline"
+            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+          >
+            Rimuovi tutte le console
+          </Button>
         </ModalFooter>
       </Modal>
 
       {/* Modal per confermare eliminazione */}
       <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)}>
-        <ModalHeader>Conferma Eliminazione</ModalHeader>
+        <ModalHeader className="text-center justify-center">
+          Conferma Eliminazione
+        </ModalHeader>
         <ModalBody>
           {selectedGame && (
-            <p>
+            <p className="text-center">
               {selectedConsoleToRemove ? 
                 `Sei sicuro di voler rimuovere "${selectedGame.name}" dalla libreria per ${getConsoleNameSync(selectedConsoleToRemove)}?` :
                 `Sei sicuro di voler rimuovere "${selectedGame.name}" dalla tua libreria?`
               }
-              Questa azione non può essere annullata.
+              <br />
+              <span className="text-sm text-gray-500 dark:text-gray-400 mt-2 block">
+                Questa azione non può essere annullata.
+              </span>
             </p>
           )}
         </ModalBody>
-        <ModalFooter>
-          <div className="hidden sm:block">
-            <Button layout="outline" onClick={() => setIsDeleteModalOpen(false)}>
-              Annulla
-            </Button>
-          </div>
+        <ModalFooter className="flex justify-center">
           <div className="hidden sm:block">
             <Button onClick={handleConfirmDelete} className="bg-red-600 hover:bg-red-700">
               Elimina
-            </Button>
-          </div>
-          <div className="block w-full sm:hidden">
-            <Button block size="large" layout="outline" onClick={() => setIsDeleteModalOpen(false)}>
-              Annulla
             </Button>
           </div>
           <div className="block w-full sm:hidden">

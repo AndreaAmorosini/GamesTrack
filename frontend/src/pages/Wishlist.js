@@ -3,6 +3,7 @@ import { getUserWishlist, removeGameFromWishlist, getConsoleNames } from '../ser
 import { Card, CardBody, Button, Badge } from '@windmill/react-ui';
 import { TrashIcon, HeartIcon, StarIcon, PlayIcon } from '../icons';
 import ThemedSuspense from '../components/ThemedSuspense';
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '@windmill/react-ui';
 
 
 const Wishlist = () => {
@@ -12,9 +13,11 @@ const Wishlist = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalGames, setTotalGames] = useState(0);
-    const [selectedPlatform, setSelectedPlatform] = useState('');
+    const [selectedConsole, setSelectedConsole] = useState('');
     const [sortBy, setSortBy] = useState('name');
     const [sortOrder, setSortOrder] = useState('asc');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filteredWishlist, setFilteredWishlist] = useState([]);
     const [deleteLoading, setDeleteLoading] = useState(null);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [gameToDelete, setGameToDelete] = useState(null);
@@ -32,10 +35,64 @@ const Wishlist = () => {
 
     const sortOptions = [
         { value: 'name', label: 'Nome' },
-        { value: 'platform', label: 'Piattaforma' },
         { value: 'rating', label: 'Rating' },
         { value: 'release_date', label: 'Data di uscita' }
     ];
+
+    // Funzione per resettare i filtri
+    const resetFilters = () => {
+        setSelectedConsole('');
+        setSortBy('name');
+        setSortOrder('asc');
+        setSearchTerm('');
+    };
+
+    // Funzione per filtrare e ordinare i giochi
+    const filterAndSortGames = (games) => {
+        let filtered = [...games];
+
+        // Filtra per termine di ricerca
+        if (searchTerm) {
+            filtered = filtered.filter(game => 
+                game.name.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+        }
+
+        // Filtra per console
+        if (selectedConsole) {
+            filtered = filtered.filter(game => 
+                game.consoles && game.consoles.includes(parseInt(selectedConsole))
+            );
+        }
+
+        // Ordina i giochi
+        filtered.sort((a, b) => {
+            if (sortBy === 'name') {
+                return sortOrder === 'asc' 
+                    ? a.name.localeCompare(b.name)
+                    : b.name.localeCompare(a.name);
+            } else if (sortBy === 'rating') {
+                const ratingA = a.game_details?.[0]?.total_rating || 0;
+                const ratingB = b.game_details?.[0]?.total_rating || 0;
+                return sortOrder === 'asc' ? ratingA - ratingB : ratingB - ratingA;
+            } else if (sortBy === 'release_date') {
+                const dateA = new Date(a.game_details?.[0]?.release_date || 0);
+                const dateB = new Date(b.game_details?.[0]?.release_date || 0);
+                return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+            }
+            return 0;
+        });
+
+        return filtered;
+    };
+
+    // Aggiorna la lista filtrata quando cambiano i filtri o la wishlist
+    useEffect(() => {
+        if (wishlist.length > 0) {
+            const filtered = filterAndSortGames(wishlist);
+            setFilteredWishlist(filtered);
+        }
+    }, [wishlist, searchTerm, selectedConsole, sortBy, sortOrder]);
 
     // Funzione per caricare i nomi delle console
     const loadConsoleNames = async (wishlistItems) => {
@@ -68,6 +125,32 @@ const Wishlist = () => {
         }
     };
 
+    // Funzione per ottenere tutte le console uniche dalla wishlist
+    const getUniqueConsoles = (games) => {
+        const consoleSet = new Set();
+        games.forEach(game => {
+            if (game.consoles && Array.isArray(game.consoles)) {
+                game.consoles.forEach(console => {
+                    consoleSet.add(console);
+                });
+            }
+        });
+        return Array.from(consoleSet);
+    };
+
+    // Stato per le console disponibili
+    const [availableConsoles, setAvailableConsoles] = useState([]);
+
+    // Aggiorna le console disponibili quando cambia la wishlist
+    useEffect(() => {
+        if (wishlist.length > 0) {
+            const consoles = getUniqueConsoles(wishlist);
+            setAvailableConsoles(consoles);
+            // Carica i nomi delle console
+            loadConsoleNames(wishlist);
+        }
+    }, [wishlist]);
+
     const fetchWishlist = async () => {
         try {
             setLoading(true);
@@ -80,8 +163,8 @@ const Wishlist = () => {
                 sort_order: sortOrder
             };
 
-            if (selectedPlatform) {
-                params.platform = selectedPlatform;
+            if (selectedConsole) {
+                params.platform = selectedConsole;
             }
 
             const data = await getUserWishlist(params);
@@ -103,7 +186,7 @@ const Wishlist = () => {
 
     useEffect(() => {
         fetchWishlist();
-    }, [currentPage, selectedPlatform, sortBy, sortOrder]);
+    }, [currentPage, selectedConsole, sortBy, sortOrder]);
 
     const handleDeleteGame = async () => {
         if (!gameToDelete) return;
@@ -114,11 +197,9 @@ const Wishlist = () => {
             // Se è stata selezionata una console specifica, rimuovi solo quella console
             if (selectedConsoleToRemove) {
                 await removeGameFromWishlist(gameToDelete.game_id, selectedConsoleToRemove);
-                alert(`Gioco rimosso dalla wishlist per ${getConsoleName(selectedConsoleToRemove)} con successo!`);
             } else {
                 // Altrimenti rimuovi l'intero gioco (comportamento legacy)
                 await removeGameFromWishlist(gameToDelete.game_id, null);
-                alert('Gioco rimosso dalla wishlist con successo!');
             }
             
             setShowDeleteModal(false);
@@ -253,20 +334,35 @@ const Wishlist = () => {
 
                 {/* Filters */}
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-8">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        {/* Platform Filter */}
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        {/* Search Field */}
+                        <div className="md:col-span-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Cerca gioco
+                            </label>
+                            <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Digita il nome del gioco..."
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                            />
+                        </div>
+
+                        {/* Console Filter */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Piattaforma
+                                Console
                             </label>
                             <select
-                                value={selectedPlatform}
-                                onChange={(e) => setSelectedPlatform(e.target.value)}
+                                value={selectedConsole}
+                                onChange={(e) => setSelectedConsole(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                             >
-                                {platforms.map((platform) => (
-                                    <option key={platform.value} value={platform.value}>
-                                        {platform.label}
+                                <option value="">Tutte le console</option>
+                                {availableConsoles.map((console) => (
+                                    <option key={console} value={console}>
+                                        {getConsoleName(console)}
                                     </option>
                                 ))}
                             </select>
@@ -305,11 +401,16 @@ const Wishlist = () => {
                             </select>
                         </div>
 
-                        {/* Refresh Button */}
-                        <div className="flex items-end">
+                        {/* Action Buttons */}
+                        <div className="md:col-span-5 flex justify-end space-x-4">
+                            <Button
+                                onClick={resetFilters}
+                                layout="outline"
+                            >
+                                Reset Filtri
+                            </Button>
                             <Button
                                 onClick={fetchWishlist}
-                                size="small"
                             >
                                 Aggiorna
                             </Button>
@@ -339,7 +440,7 @@ const Wishlist = () => {
                 )}
 
                 {/* Games List */}
-                {wishlist.length === 0 ? (
+                {filteredWishlist.length === 0 ? (
                     <div className="text-center py-12">
                         <HeartIcon className="mx-auto h-12 w-12 text-gray-400" />
                         <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
@@ -351,111 +452,96 @@ const Wishlist = () => {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {wishlist.map((wishlistItem) => {
-                            // Estrai i dettagli del gioco dal game_details
-                            const gameDetails = wishlistItem.game_details?.[0] || {};
-                            
+                        {filteredWishlist.map((wishlistItem) => {
                             const coverUrl = wishlistItem.cover_image ? `https:${wishlistItem.cover_image}` : null;
-                            
-                            const game = {
-                                ...wishlistItem,
-                                name: gameDetails.name || wishlistItem.name,
-                                rating: gameDetails.total_rating,
-                                release_date: gameDetails.release_date,
-                                summary: gameDetails.description,
-                                cover_url: coverUrl
-                            };
                             
                             return (
                                 <Card key={wishlistItem._id} className="hover:shadow-lg transition-shadow duration-200">
                                     <CardBody>
-                                        <div className="flex justify-between items-start mb-4">
-                                            <div>
-                                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                                                    {game.name}
+                                        <div className="flex justify-between items-start">
+                                            <div className="w-full text-center">
+                                                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                                                    {wishlistItem.name}
                                                 </h3>
-                                                <div className="flex items-center mt-2">
-                                                    {/* Mostra tutte le piattaforme */}
-                                                    {wishlistItem.platforms && wishlistItem.platforms.length > 0 && (
-                                                        <div className="flex flex-wrap gap-1">
-                                                            {wishlistItem.platforms.map((platform, idx) => (
-                                                                <Badge key={idx} type={getPlatformType(platform)}>
-                                                                    {getPlatformIcon(platform)} {platform || 'N/A'}
-                                                                </Badge>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    {/* Mostra tutte le console */}
-                                                    {wishlistItem.consoles && wishlistItem.consoles.length > 0 && (
-                                                        <div className="flex flex-wrap gap-1 ml-2">
-                                                            {wishlistItem.consoles.map((console, idx) => (
-                                                                <Badge key={idx} type="success">
-                                                                    {getConsoleName(console)}
-                                                                </Badge>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
                                             </div>
-                                        <Button
-                                            onClick={() => confirmDelete(wishlistItem)}
-                                            disabled={deleteLoading === (wishlistItem.wishlist_id || wishlistItem._id)}
-                                            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                        >
-                                            {deleteLoading === (wishlistItem.wishlist_id || wishlistItem._id) ? (
-                                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
-                                            ) : (
-                                                <TrashIcon className="h-4 w-4" />
-                                            )}
-                                        </Button>
-                                    </div>
-                                    <div className="space-y-3">
-                                        {game.cover_url && (
-                                            <div className="mb-4">
-                                                <img
-                                                    src={game.cover_url}
-                                                    alt={game.name}
-                                                    className="w-full h-48 object-contain rounded-lg bg-gray-100 dark:bg-gray-700"
-                                                    onError={(e) => {
-                                                        e.target.style.display = 'none'
-                                                        // Mostra un'icona di fallback
-                                                        const fallbackIcon = document.createElement('div')
-                                                        fallbackIcon.className = 'w-full h-48 flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-lg'
-                                                        fallbackIcon.innerHTML = '<svg class="w-12 h-12 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path></svg>'
-                                                        e.target.parentNode.appendChild(fallbackIcon)
-                                                    }}
-                                                />
+                                            <Button
+                                                onClick={() => confirmDelete(wishlistItem)}
+                                                disabled={deleteLoading === (wishlistItem.wishlist_id || wishlistItem._id)}
+                                                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 ml-2"
+                                            >
+                                                {deleteLoading === (wishlistItem.wishlist_id || wishlistItem._id) ? (
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                                                ) : (
+                                                    <TrashIcon className="h-4 w-4" />
+                                                )}
+                                            </Button>
+                                        </div>
+
+                                        {coverUrl && (
+                                            <div className="my-4 flex justify-center">
+                                                <div className="relative w-48 h-64">
+                                                    <img
+                                                        src={coverUrl}
+                                                        alt={wishlistItem.name}
+                                                        className="w-full h-full object-cover rounded-lg bg-gray-100 dark:bg-gray-700"
+                                                        onError={(e) => {
+                                                            e.target.style.display = 'none'
+                                                            // Mostra un'icona di fallback
+                                                            const fallbackIcon = document.createElement('div')
+                                                            fallbackIcon.className = 'w-full h-full flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-lg'
+                                                            fallbackIcon.innerHTML = '<svg class="w-12 h-12 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path></svg>'
+                                                            e.target.parentNode.appendChild(fallbackIcon)
+                                                        }}
+                                                    />
+                                                </div>
                                             </div>
                                         )}
                                         
-                                        <div className="space-y-2">
-                                            {game.rating && (
-                                                <div className="flex items-center">
-                                                    <StarIcon className="h-4 w-4 text-yellow-500 mr-2" />
-                                                    <span className="text-sm text-gray-600 dark:text-gray-400">
-                                                        Rating: {formatRating(game.rating)}
+                                        <div className="flex flex-col space-y-4 mt-4">
+                                            {/* Descrizione del gioco */}
+                                            {wishlistItem.description && (
+                                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                                    <p className="line-clamp-3 text-center">
+                                                        {wishlistItem.description}
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {/* Rating */}
+                                            {wishlistItem.total_rating && (
+                                                <div className="flex items-center justify-center">
+                                                    <StarIcon className="h-5 w-5 text-yellow-500 mr-2" />
+                                                    <span className="text-lg font-semibold text-gray-700 dark:text-gray-300">
+                                                        {Math.round(wishlistItem.total_rating)}/100
                                                     </span>
                                                 </div>
                                             )}
+
+                                            {/* Console badges */}
+                                            <div className="flex items-center justify-center">
+                                                {wishlistItem.consoles && wishlistItem.consoles.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1 justify-center">
+                                                        {wishlistItem.consoles.map((console, idx) => (
+                                                            <Badge key={idx} type="success">
+                                                                {getConsoleName(console)}
+                                                            </Badge>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
                                             
-                                            {game.release_date && (
-                                                <div className="flex items-center">
+                                            {/* Data di uscita */}
+                                            {wishlistItem.release_date && (
+                                                <div className="flex items-center justify-center">
                                                     <PlayIcon className="h-4 w-4 text-blue-500 mr-2" />
                                                     <span className="text-sm text-gray-600 dark:text-gray-400">
-                                                        Uscita: {formatDate(game.release_date)}
+                                                        Uscita: {formatDate(wishlistItem.release_date * 1000)}
                                                     </span>
                                                 </div>
                                             )}
-                                            
-                                            {game.summary && (
-                                                <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3">
-                                                    {game.summary}
-                                                </p>
-                                            )}
                                         </div>
-                                    </div>
-                                </CardBody>
-                            </Card>
+                                    </CardBody>
+                                </Card>
                         );
                         })}
                     </div>
@@ -491,151 +577,78 @@ const Wishlist = () => {
 
             {/* Console Selection Modal */}
             {showConsoleSelectionModal && (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-                    <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
-                        <div className="mt-3 text-center">
-                            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900">
-                                <HeartIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <h3 className="text-lg font-medium text-gray-900 dark:text-white mt-4">
-                                Rimuovi console specifica
-                            </h3>
-                            <div className="mt-2 px-7 py-3">
-                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    Seleziona la console da rimuovere per "{gameToDelete?.name}":
+                <Modal isOpen={showConsoleSelectionModal} onClose={() => setShowConsoleSelectionModal(false)}>
+                    <ModalHeader className="text-center">
+                        Rimuovi console specifica
+                    </ModalHeader>
+                    <ModalBody>
+                        {gameToDelete && (
+                            <div>
+                                <p className="mb-4 text-gray-600 dark:text-gray-400 text-center">
+                                    Seleziona la console da rimuovere per <strong>{gameToDelete.name}</strong>:
                                 </p>
-                                <div className="mt-4 flex flex-wrap gap-2 justify-center">
-                                    {gameToDelete?.consoles && gameToDelete.consoles.length > 0 && (
-                                        <>
+                                <div className="flex flex-col space-y-2 mb-6">
+                                    {gameToDelete.consoles && gameToDelete.consoles.length > 0 && (
+                                        gameToDelete.consoles.map((console, index) => (
                                             <Button
-                                                onClick={() => handleRemoveAllConsoles()}
+                                                key={index}
+                                                onClick={() => handleConsoleSelection(console)}
                                                 layout="outline"
-                                                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                                className="w-full text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                                             >
-                                                Rimuovi tutte le console
+                                                {getConsoleName(console)}
                                             </Button>
-                                            {gameToDelete.consoles.map((console, index) => (
-                                                <Button
-                                                    key={index}
-                                                    onClick={() => handleConsoleSelection(console)}
-                                                    layout="outline"
-                                                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                                                >
-                                                    {getConsoleName(console)}
-                                                </Button>
-                                            ))}
-                                        </>
+                                        ))
                                     )}
                                 </div>
                             </div>
-                            <div className="flex justify-center space-x-4 mt-4">
-                                <Button
-                                    onClick={() => setShowConsoleSelectionModal(false)}
-                                    layout="outline"
-                                >
-                                    Annulla
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        )}
+                    </ModalBody>
+                    <ModalFooter className="flex justify-center">
+                        <Button
+                            onClick={() => handleRemoveAllConsoles()}
+                            layout="outline"
+                            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                        >
+                            Rimuovi tutte le console
+                        </Button>
+                    </ModalFooter>
+                </Modal>
             )}
 
             {/* Delete Confirmation Modal */}
             {showDeleteModal && (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-                    <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
-                        <div className="mt-3 text-center">
-                            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900">
-                                <TrashIcon className="h-6 w-6 text-red-600 dark:text-red-400" />
-                            </div>
-                            <h3 className="text-lg font-medium text-gray-900 dark:text-white mt-4">
-                                Rimuovi dalla wishlist
-                            </h3>
-                            <div className="mt-2 px-7 py-3">
-                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    {selectedConsoleToRemove ? 
-                                        `Sei sicuro di voler rimuovere "${gameToDelete?.name}" dalla wishlist per ${getConsoleName(selectedConsoleToRemove)}?` :
-                                        `Sei sicuro di voler rimuovere "${gameToDelete?.name}" dalla tua wishlist?`
-                                    }
+                <Modal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)}>
+                    <ModalHeader className="text-center justify-center">
+                        Conferma Eliminazione
+                    </ModalHeader>
+                    <ModalBody>
+                        {gameToDelete && (
+                            <p className="text-center">
+                                {selectedConsoleToRemove ? 
+                                    `Sei sicuro di voler rimuovere "${gameToDelete.name}" dalla wishlist per ${getConsoleName(selectedConsoleToRemove)}?` :
+                                    `Sei sicuro di voler rimuovere "${gameToDelete.name}" dalla tua wishlist?`
+                                }
+                                <br />
+                                <span className="text-sm text-gray-500 dark:text-gray-400 mt-2 block">
                                     Questa azione non può essere annullata.
-                                </p>
-                            </div>
-                            <div className="flex justify-center space-x-4 mt-4">
-                                <Button
-                                    onClick={() => setShowDeleteModal(false)}
-                                    layout="outline"
-                                >
-                                    Annulla
-                                </Button>
-                                <Button
-                                    onClick={handleDeleteGame}
-                                    layout="danger"
-                                >
-                                    Rimuovi
-                                </Button>
-                            </div>
+                                </span>
+                            </p>
+                        )}
+                    </ModalBody>
+                    <ModalFooter className="flex justify-center">
+                        <div className="hidden sm:block">
+                            <Button onClick={handleDeleteGame} className="bg-red-600 hover:bg-red-700">
+                                Elimina
+                            </Button>
                         </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Console Selection Modal */}
-            {showConsoleSelectionModal && (
-                <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-                    <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800">
-                        <div className="mt-3 text-center">
-                            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900">
-                                <HeartIcon className="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                            </div>
-                            <h3 className="text-lg font-medium text-gray-900 dark:text-white mt-4">
-                                Rimuovi console specifica
-                            </h3>
-                            <div className="mt-2 px-7 py-3">
-                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    Seleziona la console da rimuovere per "{gameToDelete?.name}":
-                                </p>
-                                <div className="mt-4 flex flex-wrap gap-2 justify-center">
-                                    {gameToDelete?.consoles && gameToDelete.consoles.length > 0 && (
-                                        <>
-                                            <Button
-                                                onClick={() => handleConsoleSelection(null)}
-                                                layout="outline"
-                                                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                                            >
-                                                Rimuovi tutte le console
-                                            </Button>
-                                            {gameToDelete.consoles.map((console, index) => (
-                                                <Button
-                                                    key={index}
-                                                    onClick={() => handleConsoleSelection(console)}
-                                                    layout="outline"
-                                                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                                                >
-                                                    {getConsoleName(console)}
-                                                </Button>
-                                            ))}
-                                        </>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="flex justify-center space-x-4 mt-4">
-                                <Button
-                                    onClick={() => setShowConsoleSelectionModal(false)}
-                                    layout="outline"
-                                >
-                                    Annulla
-                                </Button>
-                                <Button
-                                    onClick={handleRemoveAllConsoles}
-                                    layout="danger"
-                                >
-                                    Rimuovi
-                                </Button>
-                            </div>
+                        <div className="block w-full sm:hidden">
+                            <Button block size="large" onClick={handleDeleteGame} className="bg-red-600 hover:bg-red-700">
+                                Elimina
+                            </Button>
                         </div>
-                    </div>
-                </div>
+                    </ModalFooter>
+                </Modal>
             )}
         </div>
     );

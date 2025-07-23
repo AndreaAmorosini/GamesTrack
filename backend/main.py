@@ -1146,7 +1146,9 @@ def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)]
                         "user_id": {"$first": "$user_id"},
                         "name": {"$first": "$game_details.name"},
                         "cover_image": {"$first": "$game_details.cover_image"},
-                        "game_details": {"$first": "$game_details"},
+                        "description": {"$first": "$game_details.description"},
+                        "total_rating": {"$first": "$game_details.total_rating"},
+                        "release_date": {"$first": "$game_details.release_date"},
                         "platforms": {"$addToSet": "$platform"},  # Array di piattaforme uniche
                         "all_consoles": {"$addToSet": "$consoles"},  # Array di array di console
                         "console_details": {"$first": "$console_details"},
@@ -1159,7 +1161,9 @@ def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)]
                         "user_id": 1,
                         "name": 1,
                         "cover_image": 1,
-                        "game_details": 1,
+                        "description": 1,
+                        "total_rating": 1,
+                        "release_date": 1,
                         "platforms": 1,
                         "consoles": {
                             "$reduce": {
@@ -1444,17 +1448,49 @@ def add_game_from_igdb(
                         detail=f"Game already in library for console {console}"
                     )
             
-            # Se il gioco non esiste, crea un nuovo record
-            db["game_user"].insert_one(
-                {
-                    "game_id": existing_game["_id"],
+            # Se il gioco non esiste nella libreria dell'utente, crealo e aggiorna le statistiche
+            game_user_doc = {
+                "game_id": existing_game["_id"],
+                "user_id": str(current_user.id),
+                "platform": "other", 
+                "num_trophies": num_trophies,
+                "play_count": play_count,
+                "consoles": [console],  # Array di console
+            }
+            
+            # Inserisci il gioco nella libreria
+            db["game_user"].insert_one(game_user_doc)
+            
+            # Aggiorna le statistiche nella collezione platforms-users
+            platform_stats_query = {
+                "user_id": str(current_user.id),
+                "platform": "other"  # Per i giochi IGDB usiamo "other" come piattaforma
+            }
+            
+            # Trova o crea il record delle statistiche della piattaforma
+            platform_stats = db["platforms-users"].find_one(platform_stats_query)
+            
+            if platform_stats:
+                # Aggiorna le statistiche esistenti
+                db["platforms-users"].update_one(
+                    platform_stats_query,
+                    {
+                        "$inc": {
+                            "game_count": 1,  # Incrementa il conteggio dei giochi
+                            "earned_achievements": num_trophies,  # Aggiungi i trofei
+                            "play_count": play_count  # Aggiungi il tempo di gioco
+                        }
+                    }
+                )
+            else:
+                # Crea un nuovo record statistiche
+                db["platforms-users"].insert_one({
                     "user_id": str(current_user.id),
-                    "platform": "other", 
-                    "num_trophies": num_trophies,
-                    "play_count": play_count,
-                    "consoles": [console],  # Array di console
-                }
-            )
+                    "platform": "other",
+                    "game_count": 1,
+                    "earned_achievements": num_trophies,
+                    "play_count": play_count
+                })
             
             return {
                 "message": "Game added to library",
@@ -1509,13 +1545,13 @@ def add_game_from_igdb(
             # Inserisci il gioco nel database
             try:
                 result = db["games"].insert_one(game_doc)
-                game_id = str(result.inserted_id)
+                game_id = result.inserted_id
             except Exception as e:
                 # Se fallisce l'inserimento (probabilmente duplicato), cerca il gioco esistente
                 if "duplicate key error" in str(e):
                     existing_game = db["games"].find_one({"igdb_id": int(igdb_id)})
                     if existing_game:
-                        game_id = str(existing_game["_id"])
+                        game_id = existing_game["_id"]
                     else:
                         raise HTTPException(
                             status_code=500,
@@ -1528,20 +1564,52 @@ def add_game_from_igdb(
                 f"Game added successfully: {game_doc['name']} (IGDB ID: {igdb_id})"
             )
             
-            db["game_user"].insert_one(
-                {
-                    "game_id": result.inserted_id,
+            # Inserisci il gioco nella libreria dell'utente
+            game_user_doc = {
+                "game_id": game_id,
+                "user_id": str(current_user.id),
+                "platform": "other",
+                "num_trophies": num_trophies,
+                "play_count": play_count,
+                "consoles": [console],  # Array di console
+            }
+            
+            db["game_user"].insert_one(game_user_doc)
+            
+            # Aggiorna le statistiche nella collezione platforms-users
+            platform_stats_query = {
+                "user_id": str(current_user.id),
+                "platform": "other"  # Per i giochi IGDB usiamo "other" come piattaforma
+            }
+            
+            # Trova o crea il record delle statistiche della piattaforma
+            platform_stats = db["platforms-users"].find_one(platform_stats_query)
+            
+            if platform_stats:
+                # Aggiorna le statistiche esistenti
+                db["platforms-users"].update_one(
+                    platform_stats_query,
+                    {
+                        "$inc": {
+                            "game_count": 1,  # Incrementa il conteggio dei giochi
+                            "earned_achievements": num_trophies,  # Aggiungi i trofei
+                            "play_count": play_count  # Aggiungi il tempo di gioco
+                        }
+                    }
+                )
+            else:
+                # Crea un nuovo record statistiche
+                db["platforms-users"].insert_one({
                     "user_id": str(current_user.id),
                     "platform": "other",
-                    "num_trophies": num_trophies,
-                    "play_count": play_count,
-                    "consoles": [console],  # Array di console
-                }
-            )
+                    "game_count": 1,
+                    "earned_achievements": num_trophies,
+                    "play_count": play_count
+                })
 
             return {
                 "message": "Game added successfully",
-                "game_id": str(result.inserted_id),
+                "game_id": str(game_id),
                 "igdb_id": igdb_id,
                 "name": game_doc["name"],
             }
@@ -1792,6 +1860,26 @@ def get_user_library(
                         "as": "console_details",
                     }
                 },
+                # Proietta i campi necessari
+                {
+                    "$project": {
+                        "game_id": 1,
+                        "user_id": 1,
+                        "platform": 1,
+                        "num_trophies": 1,
+                        "play_count": 1,
+                        "consoles": 1,
+                        "console_details": 1,
+                        "game_details": {
+                            "_id": 1,
+                            "name": 1,
+                            "cover_image": 1,
+                            "platforms": 1,  # Includi le piattaforme
+                            "release_date": 1,
+                            "total_rating": 1
+                        }
+                    }
+                }
             ]
         )
 
@@ -1826,12 +1914,12 @@ def get_user_library(
                     "own_platforms": "$platforms_data.platform",
                     "consoles": {
                         "$reduce": {
-                            "input": "$platforms_data",
+                            "input": "$platforms_data.consoles",
                             "initialValue": [],
                             "in": {
                                 "$concatArrays": [
                                     "$$value",
-                                    {"$ifNull": ["$$this.consoles", []]}
+                                    {"$ifNull": ["$$this", []]}
                                 ]
                             }
                         }
