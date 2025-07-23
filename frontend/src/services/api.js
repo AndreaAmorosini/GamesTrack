@@ -830,4 +830,31 @@ export const getConsoleNames = async (consoleIds) => {
     }
 };
 
+// Funzione per ottenere i dati della dashboard utente
+export const getUserDashboard = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        throw new Error('No token found');
+    }
+
+    try {
+        const response = await fetch(`${API_URL}/users/dashboard`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Accept': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to fetch dashboard data');
+        }
+
+        return response.json();
+    } catch (error) {
+        console.error('Get user dashboard error:', error);
+        throw error;
+    }
+};
+
  
