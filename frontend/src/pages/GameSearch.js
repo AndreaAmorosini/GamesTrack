@@ -71,10 +71,10 @@ function GameSearch() {
     try {
       if (action === 'library') {
         const libraryData = await getLibraryConsolesForGame(game.igdb_id)
-        setAlreadyAddedConsoles(libraryData.consoles || [])
+        setAlreadyAddedConsoles(libraryData.console || [])
       } else if (action === 'wishlist') {
         const wishlistData = await getWishlistConsolesForGame(game.igdb_id)
-        setAlreadyAddedConsoles(wishlistData.consoles || [])
+        setAlreadyAddedConsoles(wishlistData.console || [])
       }
     } catch (err) {
       console.error('Error loading already added consoles:', err)

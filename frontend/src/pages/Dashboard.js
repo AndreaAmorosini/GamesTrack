@@ -54,7 +54,7 @@ function Dashboard() {
   const [isConsoleModalOpen, setIsConsoleModalOpen] = useState(false)
   const [selectedGame, setSelectedGame] = useState(null)
   const [selectedAction, setSelectedAction] = useState('') // 'wishlist' o 'library'
-  const [selectedConsole, setSelectedConsole] = useState(null)
+  const [selectedConsoles, setSelectedConsoles] = useState([]) // Array di console selezionate
   const [alreadyAddedConsoles, setAlreadyAddedConsoles] = useState([])
   const [wishlistLoading, setWishlistLoading] = useState({})
   const [libraryLoading, setLibraryLoading] = useState({})
@@ -102,16 +102,16 @@ function Dashboard() {
   const openConsoleModal = async (game, action) => {
     setSelectedGame(game)
     setSelectedAction(action)
-    setSelectedConsole(null)
+    setSelectedConsoles([])
     setIsConsoleModalOpen(true)
     
     try {
       if (action === 'library') {
         const libraryData = await getLibraryConsolesForGame(game.igdb_id || game._id)
-        setAlreadyAddedConsoles(libraryData.consoles || [])
+        setAlreadyAddedConsoles(libraryData.console || [])
       } else if (action === 'wishlist') {
         const wishlistData = await getWishlistConsolesForGame(game.igdb_id || game._id)
-        setAlreadyAddedConsoles(wishlistData.consoles || [])
+        setAlreadyAddedConsoles(wishlistData.console || [])
       }
     } catch (err) {
       console.error('Error loading already added consoles:', err)
@@ -124,23 +124,36 @@ function Dashboard() {
     setIsConsoleModalOpen(false)
     setSelectedGame(null)
     setSelectedAction('')
-    setSelectedConsole(null)
+    setSelectedConsoles([])
+  }
+
+  // Funzione per gestire la selezione delle console
+  const handleConsoleSelection = (consoleId) => {
+    setSelectedConsoles(prev => {
+      if (prev.includes(consoleId)) {
+        return prev.filter(id => id !== consoleId)
+      } else {
+        return [...prev, consoleId]
+      }
+    })
   }
 
   // Funzione per confermare l'aggiunta del gioco
   const confirmAddGame = async () => {
-    if (!selectedGame || !selectedConsole) return
+    if (!selectedGame || selectedConsoles.length === 0) return
 
     try {
-      if (selectedAction === 'wishlist') {
-        setWishlistLoading(prev => ({ ...prev, [selectedGame._id]: true }))
-        await addGameToWishlist(selectedGame.igdb_id || selectedGame._id, selectedConsole)
-        alert(`${selectedGame.name} aggiunto alla wishlist per ${getConsoleNameSync(selectedConsole)}!`)
-      } else if (selectedAction === 'library') {
-        setLibraryLoading(prev => ({ ...prev, [selectedGame._id]: true }))
-        await addGameToLibrary(selectedGame.igdb_id || selectedGame._id, selectedConsole)
-        alert(`${selectedGame.name} aggiunto alla libreria per ${getConsoleNameSync(selectedConsole)}!`)
+      for (const consoleId of selectedConsoles) {
+        if (selectedAction === 'wishlist') {
+          setWishlistLoading(prev => ({ ...prev, [selectedGame._id]: true }))
+          await addGameToWishlist(selectedGame.igdb_id || selectedGame._id, consoleId)
+        } else if (selectedAction === 'library') {
+          setLibraryLoading(prev => ({ ...prev, [selectedGame._id]: true }))
+          await addGameToLibrary(selectedGame.igdb_id || selectedGame._id, consoleId)
+        }
       }
+      
+      alert(`${selectedGame.name} aggiunto con successo per ${selectedConsoles.length} console!`)
       closeConsoleModal()
       // Ricarica i dati della dashboard
       fetchDashboardData()
@@ -612,7 +625,7 @@ function Dashboard() {
           {selectedGame ? (
             <div>
               <p className="mb-4 text-gray-600 dark:text-gray-400">
-                Seleziona la console per cui vuoi aggiungere questo gioco alla {selectedAction === 'wishlist' ? 'wishlist' : 'libreria'}:
+                Seleziona le console per cui vuoi aggiungere questo gioco alla {selectedAction === 'wishlist' ? 'wishlist' : 'libreria'}:
               </p>
               
               <div className="space-y-2">
@@ -628,11 +641,11 @@ function Dashboard() {
                       }`}
                     >
                       <input
-                        type="radio"
+                        type="checkbox"
                         name="console"
                         value={console.id}
-                        checked={selectedConsole === console.id}
-                        onChange={(e) => setSelectedConsole(parseInt(e.target.value))}
+                        checked={selectedConsoles.includes(console.id)}
+                        onChange={() => handleConsoleSelection(console.id)}
                         disabled={isAlreadyAdded}
                         className="mr-3"
                       />
@@ -662,15 +675,24 @@ function Dashboard() {
           )}
         </ModalBody>
         <ModalFooter>
-          <Button layout="outline" onClick={closeConsoleModal}>
-            Annulla
-          </Button>
-          <Button 
-            onClick={confirmAddGame}
-            disabled={!selectedConsole || getAvailableConsoles(selectedGame).length === 0 || alreadyAddedConsoles.includes(selectedConsole)}
-          >
-            {selectedAction === 'wishlist' ? 'Aggiungi alla Wishlist' : 'Aggiungi alla Libreria'}
-          </Button>
+          <div className="flex flex-col space-y-3 w-full">
+            {selectedConsoles.length > 0 && (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Console selezionate: {selectedConsoles.length}
+              </p>
+            )}
+            <div className="flex justify-end space-x-3">
+              <Button layout="outline" onClick={closeConsoleModal}>
+                Annulla
+              </Button>
+              <Button 
+                onClick={confirmAddGame}
+                disabled={selectedConsoles.length === 0 || getAvailableConsoles(selectedGame).length === 0}
+              >
+                {selectedAction === 'wishlist' ? 'Aggiungi alla Wishlist' : 'Aggiungi alla Libreria'}
+              </Button>
+            </div>
+          </div>
         </ModalFooter>
       </Modal>
     </>

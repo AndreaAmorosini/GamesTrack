@@ -567,7 +567,11 @@ export const getLibraryConsolesForGame = async (igdbId) => {
             },
         });
 
-        return handleResponse(response);
+        const data = await handleResponse(response);
+        return {
+            console: Array.isArray(data.console) ? data.console : 
+                    typeof data.console === 'string' ? data.console.split(',').map(Number) : []
+        };
     } catch (error) {
         console.error('Get library consoles error:', error);
         throw error;
@@ -584,7 +588,11 @@ export const getWishlistConsolesForGame = async (igdbId) => {
             },
         });
 
-        return handleResponse(response);
+        const data = await handleResponse(response);
+        return {
+            console: Array.isArray(data.console) ? data.console : 
+                    typeof data.console === 'string' ? data.console.split(',').map(Number) : []
+        };
     } catch (error) {
         console.error('Get wishlist consoles error:', error);
         throw error;
@@ -626,6 +634,28 @@ export const getUserDashboard = async () => {
         console.error('Get user dashboard error:', error);
         throw error;
     }
+};
+
+export const updateGameMetadata = async (gameId, igdbId) => {
+  try {
+    const queryParams = new URLSearchParams({
+      game_id: gameId,
+      igdb_id: igdbId
+    });
+
+    const response = await fetch(`${API_URL}/games/update-metadata?${queryParams}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': getAuthHeader(),
+        'Accept': 'application/json'
+      }
+    });
+
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Update game metadata error:', error);
+    throw error;
+  }
 };
 
  

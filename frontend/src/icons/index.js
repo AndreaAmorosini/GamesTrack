@@ -1,3 +1,4 @@
+import React from 'react'
 import { ReactComponent as ButtonsIcon } from './buttons.svg'
 import { ReactComponent as CardsIcon } from './cards.svg'
 import { ReactComponent as ChartsIcon } from './charts.svg'
@@ -27,6 +28,7 @@ import { ReactComponent as OutlinePersonIcon } from './outlinePerson.svg'
 import { ReactComponent as OutlineCogIcon } from './outlineCog.svg'
 import { ReactComponent as OutlineLogoutIcon } from './outlineLogout.svg'
 import { ReactComponent as GamesIcon } from './games.svg'
+import { ReactComponent as RefreshIcon } from './refresh.svg'
 export { ReactComponent as TrophyIcon } from './trophy.svg'
 export { ReactComponent as PlayIcon } from './play.svg'
 export { ReactComponent as StarIcon } from './star.svg'
@@ -73,6 +75,7 @@ export {
   OutlineCogIcon,
   OutlineLogoutIcon,
   GamesIcon,
+  RefreshIcon,
   BuildingIcon,
   TagIcon,
   UsersIcon,

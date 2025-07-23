@@ -111,7 +111,7 @@ function MyLibrary() {
 
   // Funzione per renderizzare le console come array (versione sincrona per la cache)
   const renderConsoles = (game) => {
-    const consoles = game.consoles || []
+    const consoles = game.console || []
     
     if (consoles.length === 0) {
       return <span className="text-gray-400">Nessuna console</span>
@@ -134,8 +134,8 @@ function MyLibrary() {
     
     // Raccogli tutti gli ID delle console dai giochi
     games.forEach(game => {
-      if (game.consoles && Array.isArray(game.consoles)) {
-        game.consoles.forEach(consoleId => {
+      if (game.console && Array.isArray(game.console)) {
+        game.console.forEach(consoleId => {
           if (typeof consoleId === 'number' && !consoleNamesCache[consoleId]) {
             consoleIds.push(consoleId)
           }
@@ -320,7 +320,7 @@ function MyLibrary() {
     setSelectedGame(game)
     
     // Se il gioco ha più console, mostra il modal di selezione console
-    if (game.consoles && game.consoles.length > 1) {
+    if (game.console && game.console.length > 1) {
       setShowConsoleSelectionModal(true)
     } else {
       // Se ha una sola console o nessuna, mostra direttamente il modal di conferma
@@ -546,7 +546,15 @@ function MyLibrary() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {renderConsoles(game)}
+                    {game.console && game.console.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {game.console.map((consoleId, idx) => (
+                          <Badge key={idx} type="success">
+                            {getConsoleNameSync(consoleId)}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
@@ -606,8 +614,8 @@ function MyLibrary() {
                 Seleziona la console da rimuovere per <strong>{selectedGame.name}</strong>:
               </p>
               <div className="flex flex-col space-y-2 mb-6">
-                {selectedGame.consoles && selectedGame.consoles.length > 0 && (
-                  selectedGame.consoles.map((console, index) => (
+                {selectedGame.console && selectedGame.console.length > 0 && (
+                  selectedGame.console.map((console, index) => (
                     <Button
                       key={index}
                       onClick={() => handleConsoleSelection(console)}

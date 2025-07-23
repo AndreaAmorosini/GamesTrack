@@ -663,10 +663,10 @@ def add_to_wishlist(
             
             if existing_wishlist_item:
                 # Se il gioco esiste già, aggiungi la console all'array se non presente
-                if console not in existing_wishlist_item.get("consoles", []):
+                if console not in existing_wishlist_item.get("console", []):
                     db["game_user_wishlist"].update_one(
                         {"_id": existing_wishlist_item["_id"]},
-                        {"$push": {"consoles": console}}
+                        {"$push": {"console": console}}
                     )
                     return {
                         "message": f"Console {console} added to existing game in wishlist",
@@ -684,7 +684,7 @@ def add_to_wishlist(
                 {
                     "user_id": str(current_user.id),
                     "game_id": str(existing_game["_id"]),  # Converti ObjectId in stringa
-                    "consoles": [console],  # Array di console
+                    "console": [console],  # Array di console
                     "platform": "other",  # Assuming "other" for non-specific platforms
                 }
             )
@@ -766,7 +766,7 @@ def add_to_wishlist(
                 {
                     "user_id": str(current_user.id),
                     "game_id": game_id,  # Converti ObjectId in stringa
-                    "consoles": [console],  # Array di console
+                    "console": [console],  # Array di console
                     "platform": "other",  # Assuming "other" for non-specific platforms
                 }
             )
@@ -851,13 +851,13 @@ def remove_from_wishlist(
         
         # Se è specificata una console, rimuovi solo quella console dall'array
         if console is not None and existing_record:
-            if "consoles" in existing_record and console in existing_record["consoles"]:
+            if "console" in existing_record and console in existing_record["console"]:
                 # Rimuovi la console specifica dall'array
-                new_consoles = [c for c in existing_record["consoles"] if c != console]
+                new_consoles = [c for c in existing_record["console"] if c != console]
                 
                 if len(new_consoles) == 0:
                     # Se non rimangono console, elimina l'intero record
-                    logging.info(f"Removing entire record as no consoles remain")
+                    logging.info(f"Removing entire record as no console remain")
                     result = db["game_user_wishlist"].delete_one(query)
                     
                     if result.deleted_count == 0:
@@ -870,10 +870,10 @@ def remove_from_wishlist(
                     return {"message": f"Console {console} removed from wishlist"}
                 else:
                     # Aggiorna l'array delle console
-                    logging.info(f"Updating consoles array: {existing_record['consoles']} -> {new_consoles}")
+                    logging.info(f"Updating console array: {existing_record['console']} -> {new_consoles}")
                     result = db["game_user_wishlist"].update_one(
                         query,
-                        {"$set": {"consoles": new_consoles}}
+                        {"$set": {"console": new_consoles}}
                     )
                     
                     if result.modified_count == 0:
@@ -967,13 +967,13 @@ def remove_from_library(
 
             # Se è specificata una console, rimuovi solo quella console dall'array
             if console is not None and game_record:
-                if "consoles" in game_record and console in game_record["consoles"]:
+                if "console" in game_record and console in game_record["console"]:
                     # Rimuovi la console specifica dall'array
-                    new_consoles = [c for c in game_record["consoles"] if c != console]
+                    new_consoles = [c for c in game_record["console"] if c != console]
                     
                     if len(new_consoles) == 0:
                         # Se non rimangono console, elimina l'intero record
-                        logging.info(f"Removing entire record as no consoles remain")
+                        logging.info(f"Removing entire record as no console remain")
                         result = db["game_user"].delete_one(delete_query)
                         
                         if result.deleted_count == 0:
@@ -986,10 +986,10 @@ def remove_from_library(
                         return {"message": f"Console {console} removed from library"}
                     else:
                         # Aggiorna l'array delle console
-                        logging.info(f"Updating consoles array: {game_record['consoles']} -> {new_consoles}")
+                        logging.info(f"Updating console array: {game_record['console']} -> {new_consoles}")
                         result = db["game_user"].update_one(
                             delete_query,
-                            {"$set": {"consoles": new_consoles}}
+                            {"$set": {"console": new_consoles}}
                         )
                         
                         if result.modified_count == 0:
@@ -1109,83 +1109,75 @@ def remove_from_library(
 
 @app.get("/wishlist")
 def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
-    wishlist = list(
-        db["game_user_wishlist"].aggregate(
-            [
-                {"$match": {"user_id": str(current_user.id)}},
-                {
-                    "$addFields": {
-                        "game_object_id": {"$toObjectId": "$game_id"},
-                    }
-                },
-                {
-                    "$lookup": {
-                        "from": "games",
-                        "localField": "game_object_id",
-                        "foreignField": "_id",
-                        "as": "game_details",
-                    }
-                },
-                {"$unwind": "$game_details"},
-                # Join con console_platforms per ottenere i nomi delle console
-                {
-                    "$lookup": {
-                        "from": "console_platforms",
-                        "localField": "consoles",  # Usa l'array di console
-                        "foreignField": "igdb_id",
-                        "as": "console_details",
-                    }
-                },
-                # Raggruppa per game_id per unire le piattaforme
-                {
-                    "$group": {
-                        "_id": "$game_id",
-                        "game_id": {"$first": "$game_id"},
-                        "user_id": {"$first": "$user_id"},
-                        "name": {"$first": "$game_details.name"},
-                        "cover_image": {"$first": "$game_details.cover_image"},
-                        "description": {"$first": "$game_details.description"},
-                        "total_rating": {"$first": "$game_details.total_rating"},
-                        "release_date": {"$first": "$game_details.release_date"},
-                        "platforms": {"$addToSet": "$platform"},  # Array di piattaforme uniche
-                        "all_consoles": {"$addToSet": "$consoles"},  # Array di array di console
-                        "console_details": {"$first": "$console_details"},
-                    }
-                },
-                {
-                    "$project": {
-                        "_id": 1,
-                        "game_id": 1,
-                        "user_id": 1,
-                        "name": 1,
-                        "cover_image": 1,
-                        "description": 1,
-                        "total_rating": 1,
-                        "release_date": 1,
-                        "platforms": 1,
-                        "consoles": {
-                            "$reduce": {
-                                "input": "$all_consoles",
-                                "initialValue": [],
-                                "in": {
-                                    "$concatArrays": [
-                                        "$$value",
-                                        {"$ifNull": ["$$this", []]}
-                                    ]
+    #Recupera la wishlist di giochi per l'utente corrente 
+    try:
+        pipeline = [
+            {"$match": {"user_id": str(current_user.id)}},
+            {
+                "$addFields": {
+                    "console_array": {
+                        "$cond": {
+                            "if": {"$eq": [{"$type": "$console"}, "string"]},
+                            "then": {
+                                "$map": {
+                                    "input": {"$split": ["$console", ","]},
+                                    "as": "num",
+                                    "in": {"$toInt": "$$num"}
                                 }
-                            }
-                        },
-                        "console_details": 1,
+                            },
+                            "else": "$console"
+                        }
                     }
                 }
-            ]
-        )
-    )
-    
-    # Converti tutti gli ObjectId in stringhe per la serializzazione JSON
-    wishlist = convert_objectids_to_strings(wishlist)
-    
-    return {"wishlist": wishlist}
+            },
+            {
+                "$addFields": {
+                    "game_object_id": {"$toObjectId": "$game_id"},
+                }
+            },
+            {
+                "$lookup": {
+                    "from": "games",
+                    "localField": "game_object_id",
+                    "foreignField": "_id",
+                    "as": "game_details",
+                }
+            },
+            {"$unwind": "$game_details"},
+            {
+                "$lookup": {
+                    "from": "console_platforms",
+                    "localField": "console_array",  # Usa il nuovo campo convertito
+                    "foreignField": "igdb_id",
+                    "as": "console_details",
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$game_id",
+                    "game_id": {"$first": "$game_id"},
+                    "user_id": {"$first": "$user_id"},
+                    "name": {"$first": "$game_details.name"},
+                    "cover_image": {"$first": "$game_details.cover_image"},
+                    "description": {"$first": "$game_details.description"},
+                    "total_rating": {"$first": "$game_details.total_rating"},
+                    "release_date": {"$first": "$game_details.release_date"},
+                    "platforms": {"$addToSet": "$platform"},
+                    "console": {"$first": "$console_array"},  # Usa il campo convertito
+                    "console_details": {"$first": "$console_details"},
+                }
+            }
+        ]
+        
+        wishlist = list(db["game_user_wishlist"].aggregate(pipeline))
+        
+        # Converti tutti gli ObjectId in stringhe per la serializzazione JSON
+        wishlist = convert_objectids_to_strings(wishlist)
+        
+        return {"wishlist": wishlist}
+    except Exception as e:
+        logging.error(f"Error getting wishlist: {e}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving wishlist: {str(e)}")
 
 @app.get("/sync_jobs")
 def get_all_sync_by_user(
@@ -1428,74 +1420,80 @@ def add_game_from_igdb(
             })
             
             if existing_library_item:
-                # Se il gioco esiste già, aggiungi la console all'array se non presente
-                if console not in existing_library_item.get("consoles", []):
-                    db["game_user"].update_one(
-                        {"_id": existing_library_item["_id"]},
-                        {"$push": {"consoles": console}}
-                    )
-                    return {
-                        "message": f"Console {console} added to existing game in library",
-                        "game_id": str(existing_game["_id"]),
-                        "igdb_id": igdb_id,
-                        "name": existing_game.get("name", ""),
-                    }
-                else:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Game already in library for console {console}"
-                    )
-            
-            # Se il gioco non esiste nella libreria dell'utente, crealo e aggiorna le statistiche
-            game_user_doc = {
-                "game_id": existing_game["_id"],
-                "user_id": str(current_user.id),
-                "platform": "other", 
-                "num_trophies": num_trophies,
-                "play_count": play_count,
-                "consoles": [console],  # Array di console
-            }
-            
-            # Inserisci il gioco nella libreria
-            db["game_user"].insert_one(game_user_doc)
-            
-            # Aggiorna le statistiche nella collezione platforms-users
-            platform_stats_query = {
-                "user_id": str(current_user.id),
-                "platform": "other"  # Per i giochi IGDB usiamo "other" come piattaforma
-            }
-            
-            # Trova o crea il record delle statistiche della piattaforma
-            platform_stats = db["platforms-users"].find_one(platform_stats_query)
-            
-            if platform_stats:
-                # Aggiorna le statistiche esistenti
-                db["platforms-users"].update_one(
-                    platform_stats_query,
-                    {
-                        "$inc": {
-                            "game_count": 1,  # Incrementa il conteggio dei giochi
-                            "earned_achievements": num_trophies,  # Aggiungi i trofei
-                            "play_count": play_count  # Aggiungi il tempo di gioco
-                        }
-                    }
-                )
+                # Se il gioco esiste già e abbiamo una console da aggiungere (non è una sincronizzazione)
+                if console is not None:
+                    # Se il gioco non ha ancora un array di console, crealo
+                    if "console" not in existing_library_item:
+                        db["game_user"].update_one(
+                            {"_id": existing_library_item["_id"]},
+                            {"$set": {"console": [console]}}
+                        )
+                    # Se il gioco ha già un array di console, aggiungi la nuova console se non presente
+                    elif console not in existing_library_item.get("console", []):
+                        db["game_user"].update_one(
+                            {"_id": existing_library_item["_id"]},
+                            {"$push": {"console": console}}
+                        )
+                return {
+                    "message": f"Game already in library{' and console added' if console is not None else ''}",
+                    "game_id": str(existing_game["_id"]),
+                    "igdb_id": igdb_id,
+                    "name": existing_game.get("name", ""),
+                }
             else:
-                # Crea un nuovo record statistiche
-                db["platforms-users"].insert_one({
+                # Se il gioco non esiste nella libreria dell'utente, crealo e aggiorna le statistiche
+                game_user_doc = {
+                    "game_id": existing_game["_id"],
                     "user_id": str(current_user.id),
-                    "platform": "other",
-                    "game_count": 1,
-                    "earned_achievements": num_trophies,
-                    "play_count": play_count
-                })
-            
-            return {
-                "message": "Game added to library",
-                "game_id": str(existing_game["_id"]),
-                "igdb_id": igdb_id,
-                "name": existing_game.get("name", ""),
-            }
+                    "platform": "other", 
+                    "num_trophies": num_trophies,
+                    "play_count": play_count,
+                }
+                
+                # Aggiungi il campo console solo se non è una sincronizzazione
+                if console is not None:
+                    game_user_doc["console"] = [console]
+                
+                # Inserisci il gioco nella libreria
+                db["game_user"].insert_one(game_user_doc)
+                
+                # Aggiorna le statistiche nella collezione platforms-users
+                platform_stats_query = {
+                    "user_id": str(current_user.id),
+                    "platform": "other"  # Per i giochi IGDB usiamo "other" come piattaforma
+                }
+                
+                # Trova o crea il record delle statistiche della piattaforma
+                platform_stats = db["platforms-users"].find_one(platform_stats_query)
+                
+                if platform_stats:
+                    # Aggiorna le statistiche esistenti
+                    db["platforms-users"].update_one(
+                        platform_stats_query,
+                        {
+                            "$inc": {
+                                "game_count": 1,  # Incrementa il conteggio dei giochi
+                                "earned_achievements": num_trophies,  # Aggiungi i trofei
+                                "play_count": play_count  # Aggiungi il tempo di gioco
+                            }
+                        }
+                    )
+                else:
+                    # Crea un nuovo record statistiche
+                    db["platforms-users"].insert_one({
+                        "user_id": str(current_user.id),
+                        "platform": "other",
+                        "game_count": 1,
+                        "earned_achievements": num_trophies,
+                        "play_count": play_count
+                    })
+                
+                return {
+                    "message": "Game added to library",
+                    "game_id": str(existing_game["_id"]),
+                    "igdb_id": igdb_id,
+                    "name": existing_game.get("name", ""),
+                }
         else:
             # Recupera i metadata da IGDB usando l'ID
             metadata = igdb_client.get_game_metadata("", igdb_id=igdb_id)
@@ -1569,8 +1567,11 @@ def add_game_from_igdb(
                 "platform": "other",
                 "num_trophies": num_trophies,
                 "play_count": play_count,
-                "consoles": [console],  # Array di console
             }
+            
+            # Aggiungi il campo console solo se non è una sincronizzazione
+            if console is not None:
+                game_user_doc["console"] = [console]
             
             db["game_user"].insert_one(game_user_doc)
             
@@ -1873,54 +1874,61 @@ def get_user_library(
         if platform:
             match_conditions["platform"] = platform
 
-        pipeline = [{"$match": match_conditions}]
-
-        #Join con la collezione 'games' per ottenere i dettagli
-        pipeline.extend(
-            [
-                {
-                    "$lookup": {
-                        "from": "games",
-                        "localField": "game_id",
-                        "foreignField": "_id",
-                        "as": "game_details",
-                    }
-                },
-                {"$unwind": "$game_details"},
-                # Join con console_platforms per ottenere i nomi delle console
-                {
-                    "$lookup": {
-                        "from": "console_platforms",
-                        "localField": "consoles",  # Usa l'array di console
-                        "foreignField": "igdb_id",
-                        "as": "console_details",
-                    }
-                },
-                # Proietta i campi necessari
-                {
-                    "$project": {
-                        "game_id": 1,
-                        "user_id": 1,
-                        "platform": 1,
-                        "num_trophies": 1,
-                        "play_count": 1,
-                        "consoles": 1,
-                        "console_details": 1,
-                        "game_details": {
-                            "_id": 1,
-                            "name": 1,
-                            "cover_image": 1,
-                            "platforms": 1,  # Includi le piattaforme
-                            "release_date": 1,
-                            "total_rating": 1
+        pipeline = [
+            {"$match": match_conditions},
+            {
+                "$addFields": {
+                    "console_array": {
+                        "$cond": {
+                            "if": {"$eq": [{"$type": "$console"}, "string"]},
+                            "then": {
+                                "$map": {
+                                    "input": {"$split": ["$console", ","]},
+                                    "as": "num",
+                                    "in": {"$toInt": "$$num"}
+                                }
+                            },
+                            "else": "$console"
                         }
                     }
                 }
-            ]
-        )
-
-        #Raggruppamento per gioco per aggregare i dati delle piattaforme
-        pipeline.append(
+            },
+            {
+                "$lookup": {
+                    "from": "games",
+                    "localField": "game_id",
+                    "foreignField": "_id",
+                    "as": "game_details",
+                }
+            },
+            {"$unwind": "$game_details"},
+            {
+                "$lookup": {
+                    "from": "console_platforms",
+                    "localField": "console_array",  # Usa il nuovo campo convertito
+                    "foreignField": "igdb_id",
+                    "as": "console_details",
+                }
+            },
+            {
+                "$project": {
+                    "game_id": 1,
+                    "user_id": 1,
+                    "platform": 1,
+                    "num_trophies": 1,
+                    "play_count": 1,
+                    "console": "$console_array",  # Usa il campo convertito
+                    "console_details": 1,
+                    "game_details": {
+                        "_id": 1,
+                        "name": 1,
+                        "cover_image": 1,
+                        "platforms": 1,
+                        "release_date": 1,
+                        "total_rating": 1
+                    }
+                }
+            },
             {
                 "$group": {
                     "_id": "$game_id",
@@ -1931,32 +1939,35 @@ def get_user_library(
                             "platform": "$platform",
                             "play_count": {"$toInt": "$play_count"},
                             "num_trophies": {"$toInt": "$num_trophies"},
-                            "consoles": "$consoles",  # Array di console
+                            "console": "$console",
                             "console_details": "$console_details",
                         }
                     },
                 }
-            }
-        )
-
-        #Proiezione per calcolare i totali e formattare l'output
-        pipeline.append(
+            },
             {
                 "$project": {
                     "_id": 0,
-                    "game_id": {"$toString": "$_id"},  # Converti ObjectId in stringa
+                    "game_id": {"$toString": "$_id"},
                     "name": 1,
                     "cover_image": 1,
                     "own_platforms": "$platforms_data.platform",
-                    "consoles": {
+                    "console": {
                         "$reduce": {
-                            "input": "$platforms_data.consoles",
+                            "input": "$platforms_data.console",
                             "initialValue": [],
                             "in": {
-                                "$concatArrays": [
-                                    "$$value",
-                                    {"$ifNull": ["$$this", []]}
-                                ]
+                                "$cond": {
+                                    "if": {"$isArray": "$$this"},
+                                    "then": {"$concatArrays": ["$$value", "$$this"]},
+                                    "else": {
+                                        "$cond": {
+                                            "if": {"$eq": [{"$type": "$$this"}, "missing"]},
+                                            "then": "$$value",
+                                            "else": {"$concatArrays": ["$$value", ["$$this"]]}
+                                        }
+                                    }
+                                }
                             }
                         }
                     },
@@ -1975,13 +1986,13 @@ def get_user_library(
                                                     {"$divide": ["$$pd.play_count", 60]},
                                                     2,
                                                 ]
-                                            },  # Converti Steam da minuti a ore con 2 decimali
+                                            },
                                             "else": {
                                                 "$round": [
                                                     {"$divide": ["$$pd.play_count", 60]},
                                                     2,
                                                 ]
-                                            },  # Converti altri da minuti a ore con 2 decimali
+                                            },
                                         }
                                     }
                                 },
@@ -1998,8 +2009,8 @@ def get_user_library(
                                         "in": {
                                             "$cond": {
                                                 "if": {"$eq": ["$$pd.platform", "steam"]},
-                                                "then": {"$divide": ["$$pd.play_count", 60]},  # Steam: minuti -> ore
-                                                "else": {"$divide": ["$$pd.play_count", 60]}  # Altri: minuti -> ore
+                                                "then": {"$divide": ["$$pd.play_count", 60]},
+                                                "else": {"$divide": ["$$pd.play_count", 60]}
                                             }
                                         }
                                     }
@@ -2011,7 +2022,7 @@ def get_user_library(
                     "total_num_trophies": {"$sum": "$platforms_data.num_trophies"},
                 }
             }
-        )
+        ]
 
         #Ordinamento
         valid_sort_fields = ["name", "total_play_count", "total_num_trophies"]
@@ -2283,8 +2294,8 @@ def get_library_consoles_for_game(
         # Estrai le console dagli array
         consoles = []
         for item in library_items:
-            if "consoles" in item and isinstance(item["consoles"], list):
-                consoles.extend(item["consoles"])
+            if "console" in item and isinstance(item["console"], list):
+                consoles.extend(item["console"])
             elif "console" in item and item["console"] is not None:
                 # Gestione retrocompatibilità per record esistenti
                 consoles.append(item["console"])
@@ -2323,8 +2334,8 @@ def get_wishlist_consoles_for_game(
         # Estrai le console dagli array
         consoles = []
         for item in wishlist_items:
-            if "consoles" in item and isinstance(item["consoles"], list):
-                consoles.extend(item["consoles"])
+            if "console" in item and isinstance(item["console"], list):
+                consoles.extend(item["console"])
             elif "console" in item and item["console"] is not None:
                 # Gestione retrocompatibilità per record esistenti
                 consoles.append(item["console"])

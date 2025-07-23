@@ -61,7 +61,7 @@ const Wishlist = () => {
         // Filtra per console
         if (selectedConsole) {
             filtered = filtered.filter(game => 
-                game.consoles && game.consoles.includes(parseInt(selectedConsole))
+                game.console && game.console.includes(parseInt(selectedConsole))
             );
         }
 
@@ -72,12 +72,14 @@ const Wishlist = () => {
                     ? a.name.localeCompare(b.name)
                     : b.name.localeCompare(a.name);
             } else if (sortBy === 'rating') {
-                const ratingA = a.game_details?.[0]?.total_rating || 0;
-                const ratingB = b.game_details?.[0]?.total_rating || 0;
+                // Accedi direttamente al total_rating invece di cercare in game_details
+                const ratingA = a.total_rating || 0;
+                const ratingB = b.total_rating || 0;
                 return sortOrder === 'asc' ? ratingA - ratingB : ratingB - ratingA;
             } else if (sortBy === 'release_date') {
-                const dateA = new Date(a.game_details?.[0]?.release_date || 0);
-                const dateB = new Date(b.game_details?.[0]?.release_date || 0);
+                // Accedi direttamente al release_date e moltiplica per 1000 se necessario
+                const dateA = a.release_date ? new Date(a.release_date * 1000).getTime() : 0;
+                const dateB = b.release_date ? new Date(b.release_date * 1000).getTime() : 0;
                 return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
             }
             return 0;
@@ -91,6 +93,8 @@ const Wishlist = () => {
         if (wishlist.length > 0) {
             const filtered = filterAndSortGames(wishlist);
             setFilteredWishlist(filtered);
+        } else {
+            setFilteredWishlist([]);
         }
     }, [wishlist, searchTerm, selectedConsole, sortBy, sortOrder]);
 
@@ -100,8 +104,8 @@ const Wishlist = () => {
         
         // Raccogli tutti gli ID delle console dai giochi
         wishlistItems.forEach(item => {
-            if (item.consoles && Array.isArray(item.consoles)) {
-                item.consoles.forEach(consoleId => {
+            if (item.console && Array.isArray(item.console)) {
+                item.console.forEach(consoleId => {
                     if (typeof consoleId === 'number' && !consoleNamesCache[consoleId]) {
                         consoleIds.push(consoleId);
                     }
@@ -129,8 +133,8 @@ const Wishlist = () => {
     const getUniqueConsoles = (games) => {
         const consoleSet = new Set();
         games.forEach(game => {
-            if (game.consoles && Array.isArray(game.consoles)) {
-                game.consoles.forEach(console => {
+            if (game.console && Array.isArray(game.console)) {
+                game.console.forEach(console => {
                     consoleSet.add(console);
                 });
             }
@@ -143,10 +147,9 @@ const Wishlist = () => {
 
     // Aggiorna le console disponibili quando cambia la wishlist
     useEffect(() => {
-        if (wishlist.length > 0) {
-            const consoles = getUniqueConsoles(wishlist);
-            setAvailableConsoles(consoles);
-            // Carica i nomi delle console
+        const consoles = wishlist.length > 0 ? getUniqueConsoles(wishlist) : [];
+        setAvailableConsoles(consoles);
+        if (consoles.length > 0) {
             loadConsoleNames(wishlist);
         }
     }, [wishlist]);
@@ -184,6 +187,7 @@ const Wishlist = () => {
         }
     };
 
+    // Effettua il fetch quando cambiano i parametri di paginazione o filtri
     useEffect(() => {
         fetchWishlist();
     }, [currentPage, selectedConsole, sortBy, sortOrder]);
@@ -192,21 +196,82 @@ const Wishlist = () => {
         if (!gameToDelete) return;
 
         try {
-            setDeleteLoading(gameToDelete._id);
+            setDeleteLoading(gameToDelete.wishlist_id || gameToDelete._id);
+            let shouldResetFilter = false;
             
             // Se è stata selezionata una console specifica, rimuovi solo quella console
             if (selectedConsoleToRemove) {
                 await removeGameFromWishlist(gameToDelete.game_id, selectedConsoleToRemove);
+                
+                // Controlla se ci sono altri giochi con la console selezionata nel filtro attuale
+                const remainingGamesWithFilteredConsole = wishlist.filter(game => {
+                    // Se è lo stesso gioco che stiamo modificando, controlliamo le console rimanenti
+                    if (game._id === gameToDelete._id) {
+                        const remainingConsoles = game.console.filter(c => c !== selectedConsoleToRemove);
+                        return remainingConsoles.includes(parseInt(selectedConsole));
+                    }
+                    // Per gli altri giochi, controlliamo normalmente
+                    return game.console && game.console.includes(parseInt(selectedConsole));
+                });
+
+                // Se non ci sono più giochi con la console del filtro attuale
+                if (remainingGamesWithFilteredConsole.length === 0 && selectedConsole) {
+                    shouldResetFilter = true;
+                }
             } else {
-                // Altrimenti rimuovi l'intero gioco (comportamento legacy)
+                // Rimuovi l'intero gioco
                 await removeGameFromWishlist(gameToDelete.game_id, null);
+                
+                // Se questo era l'ultimo gioco con la console filtrata, resetta il filtro
+                const remainingGamesWithFilteredConsole = wishlist.filter(game => 
+                    game._id !== gameToDelete._id && 
+                    game.console && 
+                    game.console.includes(parseInt(selectedConsole))
+                );
+                
+                if (remainingGamesWithFilteredConsole.length === 0 && selectedConsole) {
+                    shouldResetFilter = true;
+                }
             }
             
+            // Reset UI state
             setShowDeleteModal(false);
             setShowConsoleSelectionModal(false);
             setGameToDelete(null);
             setSelectedConsoleToRemove(null);
-            fetchWishlist(); // Ricarica la lista
+
+            // Se dobbiamo resettare il filtro, lo facciamo prima di ricaricare i dati
+            if (shouldResetFilter) {
+                setSelectedConsole('');
+                setCurrentPage(1);
+                
+                // Forza il refresh immediato con tutti i giochi
+                const data = await getUserWishlist({
+                    page: 1,
+                    limit: 20,
+                    sort_by: sortBy,
+                    sort_order: sortOrder
+                });
+                
+                setWishlist(data.wishlist || data.games || []);
+                setTotalPages(data.total_pages || 1);
+                setTotalGames(data.total_games || data.wishlist?.length || 0);
+            } else {
+                // Altrimenti, usa i parametri correnti
+                const params = {
+                    page: currentPage,
+                    limit: 20,
+                    sort_by: sortBy,
+                    sort_order: sortOrder,
+                    ...(selectedConsole && { platform: selectedConsole })
+                };
+                
+                const data = await getUserWishlist(params);
+                setWishlist(data.wishlist || data.games || []);
+                setTotalPages(data.total_pages || 1);
+                setTotalGames(data.total_games || data.wishlist?.length || 0);
+            }
+
         } catch (err) {
             console.error('Error removing game from wishlist:', err);
             alert(err.message || 'Errore nella rimozione del gioco');
@@ -219,7 +284,7 @@ const Wishlist = () => {
         setGameToDelete(game);
         
         // Se il gioco ha più console, mostra il modal di selezione console
-        if (game.consoles && game.consoles.length > 1) {
+        if (game.console && game.console.length > 1) {
             setShowConsoleSelectionModal(true);
         } else {
             // Se ha una sola console o nessuna, mostra direttamente il modal di conferma
@@ -292,6 +357,22 @@ const Wishlist = () => {
     const formatRating = (rating) => {
         if (!rating) return 'N/A';
         return `${rating}/100`;
+    };
+
+    // Modifica la funzione che gestisce il cambio del campo di ordinamento
+    const handleSortChange = (newSortBy) => {
+        if (newSortBy === sortBy) {
+            // Se clicchiamo sullo stesso campo, invertiamo l'ordine
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+        } else {
+            // Se cambiamo campo, impostiamo l'ordine di default in base al campo
+            setSortBy(newSortBy);
+            if (newSortBy === 'rating' || newSortBy === 'release_date') {
+                setSortOrder('desc'); // Dal più alto/recente al più basso/vecchio
+            } else {
+                setSortOrder('asc'); // Ordine alfabetico per il nome
+            }
+        }
     };
 
     if (loading) {
@@ -375,7 +456,7 @@ const Wishlist = () => {
                             </label>
                             <select
                                 value={sortBy}
-                                onChange={(e) => setSortBy(e.target.value)}
+                                onChange={(e) => handleSortChange(e.target.value)}
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                             >
                                 {sortOptions.map((option) => (
@@ -387,7 +468,7 @@ const Wishlist = () => {
                         </div>
 
                         {/* Sort Order */}
-                        <div>
+                        {/* <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                 Ordine
                             </label>
@@ -399,7 +480,7 @@ const Wishlist = () => {
                                 <option value="asc">Crescente</option>
                                 <option value="desc">Decrescente</option>
                             </select>
-                        </div>
+                        </div> */}
 
                         {/* Action Buttons */}
                         <div className="md:col-span-5 flex justify-end space-x-4">
@@ -519,11 +600,11 @@ const Wishlist = () => {
 
                                             {/* Console badges */}
                                             <div className="flex items-center justify-center">
-                                                {wishlistItem.consoles && wishlistItem.consoles.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1 justify-center">
-                                                        {wishlistItem.consoles.map((console, idx) => (
+                                                {wishlistItem.console && wishlistItem.console.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {wishlistItem.console.map((consoleId, idx) => (
                                                             <Badge key={idx} type="success">
-                                                                {getConsoleName(console)}
+                                                                {getConsoleName(consoleId)}
                                                             </Badge>
                                                         ))}
                                                     </div>
@@ -588,15 +669,15 @@ const Wishlist = () => {
                                     Seleziona la console da rimuovere per <strong>{gameToDelete.name}</strong>:
                                 </p>
                                 <div className="flex flex-col space-y-2 mb-6">
-                                    {gameToDelete.consoles && gameToDelete.consoles.length > 0 && (
-                                        gameToDelete.consoles.map((console, index) => (
+                                    {gameToDelete.console && gameToDelete.console.length > 0 && (
+                                        gameToDelete.console.map((consoleId, index) => (
                                             <Button
                                                 key={index}
-                                                onClick={() => handleConsoleSelection(console)}
+                                                onClick={() => handleConsoleSelection(consoleId)}
                                                 layout="outline"
                                                 className="w-full text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
                                             >
-                                                {getConsoleName(console)}
+                                                {getConsoleName(consoleId)}
                                             </Button>
                                         ))
                                     )}
