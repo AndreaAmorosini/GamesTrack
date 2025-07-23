@@ -255,6 +255,13 @@ function GameSearch() {
   const performSearch = async () => {
     if (!searchTerm.trim()) return
 
+    // Verifica se il token è presente
+    const token = localStorage.getItem('token')
+    if (!token) {
+      window.location.replace('/login')
+      return
+    }
+
     setIsLoading(true)
     setError('')
     try {
@@ -262,7 +269,10 @@ function GameSearch() {
       setGames(data.games || [])
       setTotalResults(data.pagination?.total_returned || 0)
     } catch (err) {
-      setError('Errore durante la ricerca: ' + err.message)
+      // Non mostrare errori se è un errore di autenticazione
+      if (err.message !== 'Sessione scaduta') {
+        setError('Errore durante la ricerca: ' + err.message)
+      }
       console.error(err)
     } finally {
       setIsLoading(false)
@@ -277,6 +287,12 @@ function GameSearch() {
   // Effettua la ricerca quando cambiano i parametri
   useEffect(() => {
     if (searchTerm.trim()) {
+      // Verifica se il token è presente
+      const token = localStorage.getItem('token')
+      if (!token) {
+        window.location.replace('/login')
+        return
+      }
       performSearch()
     }
   }, [page])

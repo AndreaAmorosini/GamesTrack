@@ -459,6 +459,7 @@ def get_all_games(
 
 @app.get("/companies", response_model=dict)
 def get_all_companies(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
     name: str = Query(None, description="Filter companies by name (case-insensitive)"),
     country: str = Query(None, description="Filter companies by country (e.g., USA, Japan)"),
@@ -502,6 +503,7 @@ def get_all_companies(
 
 @app.get("/genres", response_model=dict)
 def get_all_genres(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
     name: str = Query(None, description="Filter genres by name (case-insensitive)"),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
@@ -542,6 +544,7 @@ def get_all_genres(
 
 @app.get("/game_modes", response_model=dict)
 def get_all_game_modes(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
     name: str = Query(None, description="Filter game_modes by name (case-insensitive)"),
     page: int = Query(1, ge=1, description="Page number (starts from 1)"),
@@ -1224,6 +1227,7 @@ def get_all_sync_by_user(
 
 @app.get("/search/igdb", response_model=dict)
 def search_igdb_games(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
     name: str = Query(None, description="Search games by name"),
     platform: int = Query(None, description="Filter by platform ID (IGDB platform ID)"),

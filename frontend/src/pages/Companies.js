@@ -57,6 +57,29 @@ function Companies() {
 
   // Carica le aziende quando cambiano i filtri o la pagina
   useEffect(() => {
+    const fetchCompanies = async () => {
+      setIsLoading(true)
+      setError('')
+      try {
+        const response = await getCompanies({
+          page,
+          limit: resultsPerPage,
+          name: nameFilter,
+          country: countryFilter
+        })
+        setCompanies(response.companies || [])
+        setTotalResults(response.pagination?.total_count || 0)
+      } catch (err) {
+        // Non mostrare errori se è un errore di autenticazione
+        if (err.message !== 'Sessione scaduta') {
+          setError('Errore durante il caricamento delle aziende: ' + err.message)
+        }
+        console.error(err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
     const timeoutId = setTimeout(() => {
       fetchCompanies()
     }, 500) // Debounce della ricerca

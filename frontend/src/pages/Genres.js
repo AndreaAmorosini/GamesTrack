@@ -54,6 +54,28 @@ function Genres() {
 
   // Carica i generi quando cambiano i filtri o la pagina
   useEffect(() => {
+    const fetchGenres = async () => {
+      setIsLoading(true)
+      setError('')
+      try {
+        const response = await getGenres({
+          page,
+          limit: resultsPerPage,
+          name: nameFilter
+        })
+        setGenres(response.genres || [])
+        setTotalResults(response.pagination?.total_count || 0)
+      } catch (err) {
+        // Non mostrare errori se è un errore di autenticazione
+        if (err.message !== 'Sessione scaduta') {
+          setError('Errore durante il caricamento dei generi: ' + err.message)
+        }
+        console.error(err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
     const timeoutId = setTimeout(() => {
       fetchGenres()
     }, 500) // Debounce della ricerca

@@ -54,6 +54,28 @@ function GameModes() {
 
   // Carica le modalità quando cambiano i filtri o la pagina
   useEffect(() => {
+    const fetchGameModes = async () => {
+      setIsLoading(true)
+      setError('')
+      try {
+        const response = await getGameModes({
+          page,
+          limit: resultsPerPage,
+          name: nameFilter
+        })
+        setGameModes(response.game_modes || [])
+        setTotalResults(response.pagination?.total_count || 0)
+      } catch (err) {
+        // Non mostrare errori se è un errore di autenticazione
+        if (err.message !== 'Sessione scaduta') {
+          setError('Errore durante il caricamento delle modalità di gioco: ' + err.message)
+        }
+        console.error(err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
     const timeoutId = setTimeout(() => {
       fetchGameModes()
     }, 500) // Debounce della ricerca
