@@ -12,8 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from arq.worker import run_worker
 from pymongo import MongoClient, UpdateOne, errors
-from utils.psnTrack_fixed import sync_psn                # FIX LUIGI
-from utils.steamTrack_fixed import sync_steam            # FIX LUIGI
+from .utils.psnTrack import sync_psn                # FIX LUIGI
+from .utils.steamTrack import sync_steam            # FIX LUIGI
 from utils.igdb_api import IGDBAutoAuthClient
 from arq.connections import RedisSettings
 from bson import ObjectId
@@ -42,8 +42,6 @@ async def shutdown(ctx):
         logging.warning("No MongoDB client to close.")
     logging.info("Worker shutdown complete.")
 
-#TODO: In caso aggiungere che il logging vada su file e che possa essere letto dal frontend associandolo poi con gli id del job
-# TODO: creare una query separata su igdb per i giochi della tre per restringere il margine di errore (forse mettere il filtro per tutte?)
 async def sync_job(ctx, user_id, platform, string_job_id):
     print(f"[DEBUG] 1. Function started: {user_id}, {platform}", flush=True)
 
@@ -363,8 +361,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": game_id,
                                 "user_id": str(user_id),
                                 "platform": platform,
-                                "num_trophies": int(game.get("earnedTrophy", 0)),
-                                "play_count": int(game.get("play_count", 0)),
+                                "num_trophies": int(game.get("earnedTrophy", 0) or 0),
+                                "play_count": int(game.get("play_count", 0) or 0),
                                 "console": 6 if platform == "steam" else game.get("console", 9999),
                             },
                         )
@@ -375,8 +373,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": exist["game_id"],
                                 "user_id": exist["user_id"],
                                 "platform": exist["platform"],
-                                "num_trophies": int(game.get("earnedTrophy", 0)),
-                                "play_count": int(game.get("play_count", 0)),
+                                "num_trophies": int(game.get("earnedTrophy", 0) or 0),
+                                "play_count": int(game.get("play_count", 0) or 0),
                                 "console": 6 if platform == "steam" else game.get("console", 9999),
                             },
                         )
@@ -500,8 +498,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": game_id,
                                 "user_id": str(user_id),
                                 "platform": platform,
-                                "num_trophies": int(platform_data.get("earnedTrophy", 0)),
-                                "play_count": int(platform_data.get("play_count", 0)),
+                                "num_trophies": int(platform_data.get("earnedTrophy", 0) or 0),
+                                "play_count": int(platform_data.get("play_count", 0) or 0),
                                 "console": 6 if platform == "steam" else platform_data.get("console", 9999),
                             },
                         )
@@ -511,8 +509,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                                 "game_id": exist["game_id"],
                                 "user_id": exist["user_id"],
                                 "platform": exist["platform"],
-                                "num_trophies": int(platform_data.get("earnedTrophy", 0)),
-                                "play_count": int(platform_data.get("play_count", 0)),
+                                "num_trophies": int(platform_data.get("earnedTrophy", 0) or 0),
+                                "play_count": int(platform_data.get("play_count", 0) or 0),
                                 "console": 6 if platform == "steam" else platform_data.get("console", 9999),
                             },
                         )
@@ -570,8 +568,8 @@ async def sync_job(ctx, user_id, platform, string_job_id):
                             },
                             {
                                 "$set": {
-                                    "num_trophies": int(g["num_trophies"]),
-                                    "play_count": int(g["play_count"]),
+                                    "num_trophies": int(g["num_trophies"] or 0),
+                                    "play_count": int(g["play_count"] or 0),
                                 }
                             },
                         )

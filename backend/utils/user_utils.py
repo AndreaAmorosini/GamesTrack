@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from utils.db import get_db
 from bson import ObjectId
 
+#Script per generare una chiave segreta sicura che può essere usata per firmare i token JWT.
+
 # to get a string like this run:
 # openssl rand -hex 32
 SECRET_KEY = "7e333f93fa30e9ece2038769a4a84c3f0bf6360d9e74e603cf0cbd8155a4b79d"
@@ -149,8 +151,4 @@ async def read_users_me(
 
 @router.post("/logout")
 async def logout():
-    """
-    Endpoint di logout (opzionale per invalidare token lato server)
-    In un'implementazione più avanzata, qui potresti aggiungere il token a una blacklist
-    """
     return {"message": "Logout successful"}

@@ -5,13 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware  # Luigi   (per il frontend)
 from pydantic import BaseModel, EmailStr, Field
 from init_db import init_mongo
 import os
-from pymongo import MongoClient, errors, UpdateOne
+from pymongo import MongoClient, errors
 from datetime import datetime
 from bson import ObjectId
 from utils.igdb_api import IGDBAutoAuthClient
 from utils.db import get_db
 from utils.user_utils import router as user_utils_router
-from utils.user_utils import get_password_hash, verify_password, get_current_active_user
+from utils.user_utils import get_password_hash, get_current_active_user
 import logging
 from arq import create_pool
 from arq.connections import RedisSettings
@@ -130,9 +130,6 @@ def register_user(user: User, db=Depends(get_db)):
                 "platform_id": user.steam,
                 "api_key": user.steam_api_key,
                 "steam_id": user.steam_id,
-                # "game_count": 0,
-                # "earned_achievements": 0,
-                # "play_count": 0,
                 "full_trophies_count": 0,
             }
             try:
@@ -149,9 +146,6 @@ def register_user(user: User, db=Depends(get_db)):
                 "user_id": user_id,
                 "platform_id": user.psn,
                 "api_key": user.psn_api_key,
-                # "game_count": 0,
-                # "earned_achievements": 0,
-                # "play_count": 0,
                 "full_trophies_count": 0,
             }
             try:
@@ -215,9 +209,6 @@ def update_user(
                     "platform_id": update.steam,
                     "api_key": update.steam_api_key,
                     "steam_id": update.steam_id,
-                    # "game_count": 0,
-                    # "earned_achievements": 0,
-                    # "play_count": 0,
                     "full_trophies_count": 0,
                 }
             )
@@ -243,10 +234,7 @@ def update_user(
                     "platform": "psn",
                     "user_id": str(current_user.id),
                     "platform_id": update.psn,
-                    "api_key": update.psn_api_key,  # Placeholder for future API key
-                    # "game_count": 0,
-                    # "earned_achievements": 0,
-                    # "play_count": 0,
+                    "api_key": update.psn_api_key,
                     "full_trophies_count": 0,
                 }
             )    
@@ -266,6 +254,7 @@ def update_user(
         )
     return user_response(updated)
 
+#Avvia un job di sincronizzazione per la piattaforma desiderata
 @app.post("/sync/{platform}", response_model=dict)
 async def sync_user_platform(
     platform: str,
@@ -290,6 +279,7 @@ async def sync_user_platform(
     )
     return {"detail": "Sync job queued", "job_id": job.job_id}
 
+#Recupera lo status di un job di sincronizzazione
 @app.get("/sync/status/{job_id}")
 def get_sync_status(job_id: str, db=Depends(get_db)):
     job = db["schedules"].find_one({"job_id": job_id})
@@ -297,7 +287,7 @@ def get_sync_status(job_id: str, db=Depends(get_db)):
         raise HTTPException(status_code=404, detail="Job not found")
     return {"status": job["status"]}
 
-#Per alcuni di questi filtri sarebbe l'ideale avere dei dropdown con i valori possibili e con la possibilita' di selezionarne piu' di uno e con la possibilita' di cercarne nel dropdown
+#Recupera una lista di giochi, filtrata, ordinata e paginata
 @app.get("/games", response_model=dict)
 def get_all_games(
     db=Depends(get_db),
@@ -457,6 +447,7 @@ def get_all_games(
         }
     }
 
+#Recupera una lista di aziende con filtri, ordinamento e paginazione
 @app.get("/companies", response_model=dict)
 def get_all_companies(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -501,6 +492,7 @@ def get_all_companies(
         }
     }
 
+#Recupera una lista di generi con filtri, ordinamento e paginazione
 @app.get("/genres", response_model=dict)
 def get_all_genres(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -542,6 +534,7 @@ def get_all_genres(
         }
     }
 
+#Recupera una lista di modalità di gioco con filtri, ordinamento e paginazione
 @app.get("/game_modes", response_model=dict)
 def get_all_game_modes(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -583,7 +576,7 @@ def get_all_game_modes(
         }
     }
 
-
+#Recupera una lista di console con filtri, ordinamento e paginazione
 @app.get("/consoles", response_model=list[dict])
 def get_all_consoles(
     db=Depends(get_db),
@@ -644,6 +637,7 @@ def get_platform_mapping(db=Depends(get_db)):
             status_code=500, detail=f"Error fetching platform mapping: {str(e)}"
         )
 
+#Aggiunge un gioco alla wishlist dell'utente
 @app.post("/wishlist/add")
 def add_to_wishlist(
     igdb_id: str,
@@ -784,8 +778,7 @@ def add_to_wishlist(
         logging.error(f"Error adding game from IGDB ID {igdb_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error adding game: {str(e)}")
 
-    
-    
+# Rimuove un gioco dalla wishlist dell'utente
 @app.delete("/wishlist/remove")
 def remove_from_wishlist(
     game_id: str,
@@ -911,7 +904,7 @@ def remove_from_wishlist(
             status_code=500, detail=f"Error removing game from wishlist: {str(e)}"
         )
 
-
+# Rimuove un gioco dalla libreria dell'utente
 @app.delete("/users/my-library/remove")
 def remove_from_library(
     game_id: str,
@@ -1038,55 +1031,6 @@ def remove_from_library(
                 detail=f"Game not found in library{f' for platform {platform}' if platform else ''}"
             )
         
-        # # Aggiorna le statistiche nella collezione platforms-users
-        # platform_stats_query = {
-        #     "user_id": str(current_user.id),
-        #     "platform": game_platform
-        # }
-        
-        # Trova il record delle statistiche della piattaforma
-        # platform_stats = db["platforms-users"].find_one(platform_stats_query)
-        
-        # if platform_stats:
-        #     logging.info(f"Platform stats before conversion: {platform_stats}")
-            
-        #     # Converti i valori in interi per evitare errori di tipo
-        #     try:
-        #         current_game_count = int(platform_stats.get("game_count", 0))
-        #         current_earned_achievements = int(platform_stats.get("earned_achievements", 0))
-        #         current_play_count = int(platform_stats.get("play_count", 0))
-                
-        #         logging.info(f"Converted values - game_count: {current_game_count} (type: {type(current_game_count)}), earned_achievements: {current_earned_achievements} (type: {type(current_earned_achievements)}), play_count: {current_play_count} (type: {type(current_play_count)})")
-                
-        #         # Calcola i nuovi valori sottraendo i dati del gioco eliminato
-        #         new_game_count = max(0, current_game_count - 1)  # Sottrai 1 gioco
-        #         new_earned_achievements = max(0, current_earned_achievements - game_num_trophies)
-        #         new_play_count = max(0, current_play_count - game_play_count)
-                
-        #         logging.info(f"Calculated new values - game_count: {new_game_count}, earned_achievements: {new_earned_achievements}, play_count: {new_play_count}")
-                
-        #     except (ValueError, TypeError) as e:
-        #         logging.error(f"Error converting platform stats to int: {e}")
-        #         logging.error(f"Platform stats values: game_count={platform_stats.get('game_count')}, earned_achievements={platform_stats.get('earned_achievements')}, play_count={platform_stats.get('play_count')}")
-        #         raise HTTPException(
-        #             status_code=500, 
-        #             detail=f"Error converting platform statistics: {str(e)}"
-        #         )
-            
-            # Aggiorna le statistiche
-            # update_result = db["platforms-users"].update_one(
-            #     platform_stats_query,
-            #     {
-            #         "$set": {
-            #             "game_count": new_game_count,
-            #             "earned_achievements": new_earned_achievements,
-            #             "play_count": new_play_count
-            #         }
-            #     }
-            # )
-                        
-            # if update_result.modified_count == 0:
-            #     logging.warning("No platform stats record was updated")
         else:
             logging.warning(f"No platform stats found for user {current_user.id} and platform {game_platform}")
 
@@ -1103,10 +1047,7 @@ def remove_from_library(
             status_code=500, detail=f"Error removing game from library: {str(e)}"
         )
 
-
-
-
-
+# Recupera la wishlist di giochi per l'utente corrente
 @app.get("/wishlist")
 def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)], db=Depends(get_db)):
     #Recupera la wishlist di giochi per l'utente corrente 
@@ -1179,6 +1120,7 @@ def get_wishlist(current_user: Annotated[User, Depends(get_current_active_user)]
         logging.error(f"Error getting wishlist: {e}")
         raise HTTPException(status_code=500, detail=f"Error retrieving wishlist: {str(e)}")
 
+# Recupera tutti i job di sincronizzazione per l'utente corrente con filtri e paginazione
 @app.get("/sync_jobs")
 def get_all_sync_by_user(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -1218,7 +1160,7 @@ def get_all_sync_by_user(
         "total_pages": (total_count + limit - 1) // limit
     }
 
-
+# Search games from IGDB API with filters for name, platform, and company
 @app.get("/search/igdb", response_model=dict)
 def search_igdb_games(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -1396,7 +1338,7 @@ def search_igdb_games(
             status_code=500, detail=f"Error searching games from IGDB: {str(e)}"
         )
 
-
+# Aggiunge un gioco alla libreria dell'utente usando i metadati di IGDB tramite IGDB ID
 @app.post("/games/add", response_model=dict)
 def add_game_from_igdb(
     igdb_id: int,
@@ -1618,7 +1560,8 @@ def add_game_from_igdb(
     except Exception as e:
         logging.error(f"Error adding game from IGDB ID {igdb_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Error adding game: {str(e)}")
-    
+
+# Aggiorna i metadati di un gioco nel database con quelli di IGDB
 @app.patch("/games/update-metadata", response_model=dict)
 def update_game_metadata(
     game_id: str,
@@ -1759,11 +1702,6 @@ def update_game_metadata(
         raise HTTPException(
             status_code=500, detail=f"An unexpected error occurred: {str(e)}"
         )
-    
-#TODO: edit game metadata
-# TODO: retrieve game by ID
-#TODO: force update game metadata
-
 
 # FIX LUIGI
 @app.get("/platforms-users")
@@ -1850,7 +1788,7 @@ def get_user_platforms_stats(
             detail=f"Error retrieving user platforms statistics: {str(e)}"
         )# END FIX LUIGI
 
-
+# Recupera la libreria di giochi dell'utente corrente con filtri e paginazione
 @app.get("/users/my-library", response_model=dict)
 def get_user_library(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -1885,10 +1823,10 @@ def get_user_library(
                                 "$map": {
                                     "input": {"$split": ["$console", ","]},
                                     "as": "num",
-                                    "in": {"$toInt": "$$num"}
+                                    "in": {"$toInt": "$$num"},
                                 }
                             },
-                            "else": "$console"
+                            "else": "$console",
                         }
                     }
                 }
@@ -1925,8 +1863,8 @@ def get_user_library(
                         "cover_image": 1,
                         "platforms": 1,
                         "release_date": 1,
-                        "total_rating": 1
-                    }
+                        "total_rating": 1,
+                    },
                 }
             },
             {
@@ -1937,7 +1875,15 @@ def get_user_library(
                     "platforms_data": {
                         "$push": {
                             "platform": "$platform",
-                            "play_count": {"$toInt": "$play_count"},
+                            "play_count": {
+                                "$cond": {
+                                    "if": {"$eq": ["$platform", "psn"]},
+                                    "then": {
+                                        "$multiply": [{"$toInt": "$play_count"}, 60]
+                                    },
+                                    "else": {"$toInt": "$play_count"},
+                                }
+                            },
                             "num_trophies": {"$toInt": "$num_trophies"},
                             "console": "$console",
                             "console_details": "$console_details",
@@ -1962,13 +1908,17 @@ def get_user_library(
                                     "then": {"$concatArrays": ["$$value", "$$this"]},
                                     "else": {
                                         "$cond": {
-                                            "if": {"$eq": [{"$type": "$$this"}, "missing"]},
+                                            "if": {
+                                                "$eq": [{"$type": "$$this"}, "missing"]
+                                            },
                                             "then": "$$value",
-                                            "else": {"$concatArrays": ["$$value", ["$$this"]]}
+                                            "else": {
+                                                "$concatArrays": ["$$value", ["$$this"]]
+                                            },
                                         }
-                                    }
+                                    },
                                 }
-                            }
+                            },
                         }
                     },
                     "play_count_by_platform": {
@@ -1983,18 +1933,28 @@ def get_user_library(
                                             "if": {"$eq": ["$$pd.platform", "steam"]},
                                             "then": {
                                                 "$round": [
-                                                    {"$divide": ["$$pd.play_count", 60]},
+                                                    {
+                                                        "$divide": [
+                                                            "$$pd.play_count",
+                                                            60,
+                                                        ]
+                                                    },
                                                     2,
                                                 ]
                                             },
                                             "else": {
                                                 "$round": [
-                                                    {"$divide": ["$$pd.play_count", 60]},
+                                                    {
+                                                        "$divide": [
+                                                            "$$pd.play_count",
+                                                            60,
+                                                        ]
+                                                    },
                                                     2,
                                                 ]
                                             },
                                         }
-                                    }
+                                    },
                                 },
                             }
                         }
@@ -2008,20 +1968,26 @@ def get_user_library(
                                         "as": "pd",
                                         "in": {
                                             "$cond": {
-                                                "if": {"$eq": ["$$pd.platform", "steam"]},
-                                                "then": {"$divide": ["$$pd.play_count", 60]},
-                                                "else": {"$divide": ["$$pd.play_count", 60]}
+                                                "if": {
+                                                    "$eq": ["$$pd.platform", "steam"]
+                                                },
+                                                "then": {
+                                                    "$divide": ["$$pd.play_count", 60]
+                                                },
+                                                "else": {
+                                                    "$divide": ["$$pd.play_count", 60]
+                                                },
                                             }
-                                        }
+                                        },
                                     }
                                 }
                             },
-                            2
+                            2,
                         ]
                     },
                     "total_num_trophies": {"$sum": "$platforms_data.num_trophies"},
                 }
-            }
+            },
         ]
 
         #Ordinamento
@@ -2094,7 +2060,7 @@ def get_user_library(
             status_code=500, detail="Impossibile recuperare la libreria utente."
         )
 
-
+# Recupera le statistiche del dashboard dell'utente corrente
 @app.get("/users/dashboard", response_model=dict)
 def get_user_stats(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -2272,6 +2238,7 @@ def get_user_stats(
             status_code=500, detail=f"Error retrieving user statistics: {str(e)}"
         )
 
+# Recupera le console già aggiunte alla libreria o alla wishlist per un gioco specifico
 @app.get("/games/{igdb_id}/library-consoles")
 def get_library_consoles_for_game(
     igdb_id: int,

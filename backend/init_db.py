@@ -12,7 +12,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-
+# Initialize MongoDB connection and collections
+# This function will be called to set up the database and collections and retrieve categorical data from IGDB
 def init_mongo():
     uri = f"mongodb://{os.environ['MONGO_INIT_USER']}:{os.environ['MONGO_INIT_PASS']}@mongo:27017/"
     max_retries = 20
@@ -35,21 +36,21 @@ def init_mongo():
             logging.info(f"Existing collections: {existing}")
             if "users" not in existing:
                 db.create_collection("users")
-                db["users"].create_index("email", unique=True)
-                db["users"].create_index("username", unique=True)
+            #     db["users"].create_index("email", unique=True)
+            #     db["users"].create_index("username", unique=True)
             
-                result = db["users"].insert_one(
-                    {
-                        "username": "test_user",
-                        "password": "test_password",
-                        "email": "test@example.com",
-                    }
-                )
+            #     result = db["users"].insert_one(
+            #         {
+            #             "username": "test_user",
+            #             "password": "test_password",
+            #             "email": "test@example.com",
+            #         }
+            #     )
             
-                user_id = str(result.inserted_id)
-            else:
-                users_remote = db["users"]
-                user_id = users_remote.find_one({"username": "test_user"})["_id"]
+            #     user_id = str(result.inserted_id)
+            # else:
+            #     users_remote = db["users"]
+            #     user_id = users_remote.find_one({"username": "test_user"})["_id"]
             
             #Check which info on genres, platforms, publishers and developers can be retrieved from igdb
             logging.info("Creating Platforms")
@@ -75,9 +76,9 @@ def init_mongo():
                 )
             
                 platIdTest = resultPlat.inserted_ids  # Store the inserted IDs if needed
-            else:
-                platforms_remote = db["platforms"]
-                platIdTest = platforms_remote.find_one()["_id"]
+            # else:
+            #     platforms_remote = db["platforms"]
+            #     platIdTest = platforms_remote.find_one()["_id"]
             
             
             if "console_platforms" not in existing:
@@ -151,33 +152,27 @@ def init_mongo():
             
             if "platforms-users" not in existing:
                 db.create_collection("platforms-users")
-                db["platforms-users"].create_index([("platform", ASCENDING), ("user_id", ASCENDING)], unique=True)
+                # db["platforms-users"].create_index([("platform", ASCENDING), ("user_id", ASCENDING)], unique=True)
                 
-                db["platforms-users"].insert_one(
-                    {
-                        "platform": "steam", #steam, psn, xbox
-                        "user_id": user_id,
-                        "platform_id": "steam_id",
-                        "api_key": "steam_api_key",
-                        # "game_count": 10, # total games played on this platform
-                        # "earned_achievements": 5, # total achievements earned
-                        # "play_count": 10, # total play count
-                        "full_trophies_count": 0, # total full trophies count
-                    }
-                )
+                # db["platforms-users"].insert_one(
+                #     {
+                #         "platform": "steam", #steam, psn, xbox
+                #         "user_id": user_id,
+                #         "platform_id": "steam_id",
+                #         "api_key": "steam_api_key",
+                #         "full_trophies_count": 0, # total full trophies count
+                #     }
+                # )
                 
-                db["platforms-users"].insert_one(
-                    {
-                        "platform": "psn", #steam, psn, xbox
-                        "user_id": user_id,
-                        "platform_id": "psn_id",
-                        "api_key": "psn_api_key",
-                        # "game_count": 20, # total games played on this platform
-                        # "earned_achievements": 55, # total achievements earned
-                        # "play_count": 10, # total play count
-                        "full_trophies_count": 1, # total full trophies count
-                    }
-                )
+                # db["platforms-users"].insert_one(
+                #     {
+                #         "platform": "psn", #steam, psn, xbox
+                #         "user_id": user_id,
+                #         "platform_id": "psn_id",
+                #         "api_key": "psn_api_key",
+                #         "full_trophies_count": 1, # total full trophies count
+                #     }
+                # )
 
 
             if "games" not in existing:
@@ -215,56 +210,56 @@ def init_mongo():
 
             if "game_user" not in existing:
                 db.create_collection("game_user")
-                db["game_user"].create_index(
-                    [("game_id", ASCENDING), ("user_id", ASCENDING), ("platform", ASCENDING)], unique=True
-                )
+                # db["game_user"].create_index(
+                #     [("game_id", ASCENDING), ("user_id", ASCENDING), ("platform", ASCENDING)], unique=True
+                # )
 
-                db["game_user"].insert_one(
-                    {
-                        "game_id": "test_game_id",
-                        "user_id": user_id,
-                        "platform": "steam",  # steam
-                        "num_trophies": 3,
-                        "play_count": 10,
-                    }
-                )
+                # db["game_user"].insert_one(
+                #     {
+                #         "game_id": "test_game_id",
+                #         "user_id": user_id,
+                #         "platform": "steam",  # steam
+                #         "num_trophies": 3,
+                #         "play_count": 10,
+                #     }
+                # )
             
             if "game_user_wishlist" not in existing:
                 db.create_collection("game_user_wishlist")
-                db["game_user_wishlist"].create_index(
-                    [("game_id", ASCENDING), ("user_id", ASCENDING), ("platform", ASCENDING)], unique=True
-                )
+                # db["game_user_wishlist"].create_index(
+                #     [("game_id", ASCENDING), ("user_id", ASCENDING), ("platform", ASCENDING)], unique=True
+                # )
 
-                db["game_user_wishlist"].insert_one(
-                    {
-                        "game_id": "test_game_id",
-                        "user_id": user_id,
-                        "platform": "steam",
-                    }
-                )
+                # db["game_user_wishlist"].insert_one(
+                #     {
+                #         "game_id": "test_game_id",
+                #         "user_id": user_id,
+                #         "platform": "steam",
+                #     }
+                # )
 
             if "schedules" not in existing:
                 db.create_collection("schedules")
-                db["schedules"].create_index(
-                    [("user_id", ASCENDING), ("platform", ASCENDING)],
-                )
+                # db["schedules"].create_index(
+                #     [("user_id", ASCENDING), ("platform", ASCENDING)],
+                # )
                 
-                db["schedules"].insert_one(
-                    {
-                        "job_id": "test_job_id",
-                        "job_string_id": "test_job_string_id",
-                        "user_id": user_id,
-                        "platform": "steam",
-                        "status": "success",  # pending, running, completed, failed
-                        "created_at": datetime.datetime(2025, 7, 4, 16, 19, 57, 898000),
-                        "updated_at": datetime.datetime(2025, 7, 4, 16, 19, 57, 898000),
-                        "error": None,
-                        "game_inserted": 10,  # Number of games inserted
-                        "game_updated": 5,  # Number of games updated
-                        "game_user_inserted": 3,  # Number of games associated
-                        "game_user_updated": 2,  # Number of game-user associations updated
-                    }
-                )
+                # db["schedules"].insert_one(
+                #     {
+                #         "job_id": "test_job_id",
+                #         "job_string_id": "test_job_string_id",
+                #         "user_id": user_id,
+                #         "platform": "steam",
+                #         "status": "success",  # pending, running, completed, failed
+                #         "created_at": datetime.datetime(2025, 7, 4, 16, 19, 57, 898000),
+                #         "updated_at": datetime.datetime(2025, 7, 4, 16, 19, 57, 898000),
+                #         "error": None,
+                #         "game_inserted": 10,  # Number of games inserted
+                #         "game_updated": 5,  # Number of games updated
+                #         "game_user_inserted": 3,  # Number of games associated
+                #         "game_user_updated": 2,  # Number of game-user associations updated
+                #     }
+                # )
 
             # your init logic here...
             logging.info("MongoDB connected and initialized.")
