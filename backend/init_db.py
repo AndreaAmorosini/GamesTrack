@@ -53,29 +53,29 @@ def init_mongo():
             #     user_id = users_remote.find_one({"username": "test_user"})["_id"]
             
             #Check which info on genres, platforms, publishers and developers can be retrieved from igdb
-            logging.info("Creating Platforms")
-            if "platforms" not in existing:
-                db.create_collection("platforms")
-                db["platforms"].create_index("platform_name", unique=True)
+            # logging.info("Creating Platforms")
+            # if "platforms" not in existing:
+            #     db.create_collection("platforms")
+            #     db["platforms"].create_index("platform_name", unique=True)
                 
-                resultPlat = db.platforms.insert_many(
-                    [
-                        {
-                            "platform_name": "steam",
-                            "logo_image": "https://www.citypng.com/public/uploads/preview/steam-round-logo-icon-download-png-701751694966032dl6elakl5o.png",
-                        },
-                        {
-                            "platform_name": "psn",
-                            "logo_image": "https://icon2.cleanpng.com/lnd/20241222/is/174b213741c74c8d4a12a73ff2169c.webp",
-                        },
-                        {
-                            "platform_name": "xbox",
-                            "logo_image": "https://img.favpng.com/7/6/15/xbox-360-controller-logo-png-favpng-Y7Ebihg6jcr1YmCD6fYByX048.jpg",
-                        },
-                    ]
-                )
+            #     resultPlat = db.platforms.insert_many(
+            #         [
+            #             {
+            #                 "platform_name": "steam",
+            #                 "logo_image": "https://www.citypng.com/public/uploads/preview/steam-round-logo-icon-download-png-701751694966032dl6elakl5o.png",
+            #             },
+            #             {
+            #                 "platform_name": "psn",
+            #                 "logo_image": "https://icon2.cleanpng.com/lnd/20241222/is/174b213741c74c8d4a12a73ff2169c.webp",
+            #             },
+            #             {
+            #                 "platform_name": "xbox",
+            #                 "logo_image": "https://img.favpng.com/7/6/15/xbox-360-controller-logo-png-favpng-Y7Ebihg6jcr1YmCD6fYByX048.jpg",
+            #             },
+            #         ]
+            #     )
             
-                platIdTest = resultPlat.inserted_ids  # Store the inserted IDs if needed
+                # platIdTest = resultPlat.inserted_ids  # Store the inserted IDs if needed
             # else:
             #     platforms_remote = db["platforms"]
             #     platIdTest = platforms_remote.find_one()["_id"]

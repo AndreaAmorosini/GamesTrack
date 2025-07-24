@@ -40,8 +40,8 @@ services:
       MONGO_INIT_PASS: root
       # IGDB_CLIENT_ID: 3g9sfbgapbmxgmlm3hf9d3w8jsw8qx
       # IGDB_CLIENT_SECRET: 20jwvc5blf7k3jjoe8ujxavveh0bag
-      IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}                       # Luigi
-      IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}               # Luigi
+      IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
+      IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
     ports:
       - "8000:8000"
     networks:
@@ -68,8 +68,8 @@ services:
       PYTHONUNBUFFERED: 1
       MONGO_INIT_USER: root
       MONGO_INIT_PASS: root
-      IGDB_CLIENT_ID: 3g9sfbgapbmxgmlm3hf9d3w8jsw8qx
-      IGDB_CLIENT_SECRET: 20jwvc5blf7k3jjoe8ujxavveh0bag
+      IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
+      IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
     networks:
       - gametrack
     volumes:
