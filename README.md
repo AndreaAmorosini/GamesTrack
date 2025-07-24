@@ -48,6 +48,26 @@ docker-compose down
 - **Frontend**: http://localhost:3000
 - **Documentazione API**: http://localhost:8000/docs
 
+#### 4. Sincronizzazione
+1. Creare un utente
+2. Procedere alla sezione di update del profilo
+3. Compilare le credenziali per steam e psn
+    - **Steam**: Inserire le credenziali Steam
+        - Vai su [Steam API Key](https://steamcommunity.com/dev/apikey)
+        - Genera una nuova chiave
+        - Inserisci la chiave generata ed il proprio SteamID
+   - **PSN**: Inserire credenziali PlayStation
+     - Username PSN
+     - NPSSO
+       - Per recuperare il proprio NPSSO:
+         1. Login nel tuo account [My PlayStation](https://my.playstation.com).
+         2. In un'altra scheda, vai su [https://ca.account.sony.com/api/v1/ssocookie](https://ca.account.sony.com/api/v1/ssocookie).
+         3. Se sei loggato, vedrai un testo simile a questo:
+            ```json
+            {"npsso":"<64 character npsso code>"}
+            ```
+4. Avviare la sincronizzazione dalla dashboard
+
 ## Tecnologie
 
 - **Frontend**: React, Tailwind CSS

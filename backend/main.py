@@ -1400,35 +1400,32 @@ def add_game_from_igdb(
                 db["game_user"].insert_one(game_user_doc)
                 
                 # Aggiorna le statistiche nella collezione platforms-users
-                platform_stats_query = {
-                    "user_id": str(current_user.id),
-                    "platform": "other"  # Per i giochi IGDB usiamo "other" come piattaforma
-                }
+                # platform_stats_query = {
+                #     "user_id": str(current_user.id),
+                #     "platform": "other"  # Per i giochi IGDB usiamo "other" come piattaforma
+                # }
                 
-                # Trova o crea il record delle statistiche della piattaforma
-                platform_stats = db["platforms-users"].find_one(platform_stats_query)
+                # # Trova o crea il record delle statistiche della piattaforma
+                # platform_stats = db["platforms-users"].find_one(platform_stats_query)
                 
-                if platform_stats:
-                    # Aggiorna le statistiche esistenti
-                    db["platforms-users"].update_one(
-                        platform_stats_query,
-                        {
-                            "$inc": {
-                                "game_count": 1,  # Incrementa il conteggio dei giochi
-                                "earned_achievements": num_trophies,  # Aggiungi i trofei
-                                "play_count": play_count  # Aggiungi il tempo di gioco
-                            }
-                        }
-                    )
-                else:
-                    # Crea un nuovo record statistiche
-                    db["platforms-users"].insert_one({
-                        "user_id": str(current_user.id),
-                        "platform": "other",
-                        "game_count": 1,
-                        "earned_achievements": num_trophies,
-                        "play_count": play_count
-                    })
+                # if platform_stats:
+                #     # Aggiorna le statistiche esistenti
+                #     db["platforms-users"].update_one(
+                #         platform_stats_query,
+                #         {
+                #             "$inc": {
+                #                 "game_count": 1,  # Incrementa il conteggio dei giochi
+                #                 "earned_achievements": num_trophies,  # Aggiungi i trofei
+                #                 "play_count": play_count  # Aggiungi il tempo di gioco
+                #             }
+                #         }
+                #     )
+                # else:
+                #     # Crea un nuovo record statistiche
+                #     db["platforms-users"].insert_one({
+                #         "user_id": str(current_user.id),
+                #         "platform": "other",
+                #     })
                 
                 return {
                     "message": "Game added to library",
@@ -1518,35 +1515,35 @@ def add_game_from_igdb(
             db["game_user"].insert_one(game_user_doc)
             
             # Aggiorna le statistiche nella collezione platforms-users
-            platform_stats_query = {
-                "user_id": str(current_user.id),
-                "platform": "other"  # Per i giochi IGDB usiamo "other" come piattaforma
-            }
+            # platform_stats_query = {
+            #     "user_id": str(current_user.id),
+            #     "platform": "other"  # Per i giochi IGDB usiamo "other" come piattaforma
+            # }
             
             # Trova o crea il record delle statistiche della piattaforma
-            platform_stats = db["platforms-users"].find_one(platform_stats_query)
+            # platform_stats = db["platforms-users"].find_one(platform_stats_query)
             
-            if platform_stats:
-                # Aggiorna le statistiche esistenti
-                db["platforms-users"].update_one(
-                    platform_stats_query,
-                    {
-                        "$inc": {
-                            "game_count": 1,  # Incrementa il conteggio dei giochi
-                            "earned_achievements": num_trophies,  # Aggiungi i trofei
-                            "play_count": play_count  # Aggiungi il tempo di gioco
-                        }
-                    }
-                )
-            else:
-                # Crea un nuovo record statistiche
-                db["platforms-users"].insert_one({
-                    "user_id": str(current_user.id),
-                    "platform": "other",
-                    "game_count": 1,
-                    "earned_achievements": num_trophies,
-                    "play_count": play_count
-                })
+            # if platform_stats:
+            #     # Aggiorna le statistiche esistenti
+            #     db["platforms-users"].update_one(
+            #         platform_stats_query,
+            #         {
+            #             "$inc": {
+            #                 "game_count": 1,  # Incrementa il conteggio dei giochi
+            #                 "earned_achievements": num_trophies,  # Aggiungi i trofei
+            #                 "play_count": play_count  # Aggiungi il tempo di gioco
+            #             }
+            #         }
+            #     )
+            # else:
+            #     # Crea un nuovo record statistiche
+            #     db["platforms-users"].insert_one({
+            #         "user_id": str(current_user.id),
+            #         "platform": "other",
+            #         "game_count": 1,
+            #         "earned_achievements": num_trophies,
+            #         "play_count": play_count
+            #     })
 
             return {
                 "message": "Game added successfully",
