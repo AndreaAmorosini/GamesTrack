@@ -425,35 +425,51 @@ function GameExplorer() {
 
   // Funzione per cercare giochi su IGDB
   const searchIGDBGame = async (query) => {
-    if (!query.trim()) return
+    if (!query.trim()) return;
     
-    setIsSearching(true)
-    setSearchError('')
+    setIsSearching(true);
+    setSearchError('');
     try {
-      const response = await searchIGDBGames(query)
-      setSearchResults(response.games || [])
+      // Limita i risultati a massimo 10 record per la ricerca metadati
+      const response = await searchIGDBGames(query, {
+        page: 1,
+        limit: 10
+      });
+      setSearchResults(response.games || []);
     } catch (error) {
-      setSearchError(error.message || 'Errore durante la ricerca')
-      setSearchResults([])
+      setSearchError(error.message || 'Errore durante la ricerca');
+      setSearchResults([]);
     } finally {
-      setIsSearching(false)
+      setIsSearching(false);
     }
-  }
+  };
 
   // Funzione per aggiornare i metadati
-  const handleUpdateMetadata = async (game) => {
-    if (!game?._id) return;
-    
-    if (!game?.igdb_id) {
-      alert('Questo gioco non ha un ID IGDB nel database. Impossibile aggiornare i metadati.');
-      return;
-    }
+  const handleUpdateMetadata = async (igdbGame) => {
+    if (!selectedGameForMetadata?._id) return;
 
     try {
-      await updateGameMetadata(game._id, game.igdb_id);
-      await searchGames();
+      // Verifica che igdbGame.igdb_id esista e sia convertibile in numero
+      if (!igdbGame?.igdb_id) {
+        throw new Error('ID IGDB non trovato');
+      }
+
+      // Converti l'ID in numero se è una stringa
+      const igdbId = typeof igdbGame.igdb_id === 'string' ? parseInt(igdbGame.igdb_id, 10) : igdbGame.igdb_id;
+      
+      // Verifica che l'ID sia un numero valido
+      if (isNaN(igdbId) || igdbId <= 0) {
+        throw new Error('ID IGDB non valido');
+      }
+
+      console.log('ID IGDB da utilizzare:', igdbId);
+
+      await updateGameMetadata(selectedGameForMetadata._id, igdbId);
+      await searchGames(); // Ricarica la lista dei giochi
+      setIsMetadataModalOpen(false); // Chiude la modal
       alert('Metadati aggiornati con successo!');
     } catch (error) {
+      console.error('Errore nell\'aggiornamento metadati:', error);
       alert(error.message || 'Errore durante l\'aggiornamento dei metadati');
     }
   };
@@ -731,9 +747,9 @@ function GameExplorer() {
                       layout="link"
                       size="small"
                       aria-label="Update Metadata"
-                      onClick={() => handleUpdateMetadata(game)}
+                      onClick={() => openMetadataModal(game)}
                       className="text-blue-600 hover:text-blue-900"
-                      title={game?.igdb_id ? 'Aggiorna metadati da IGDB' : 'ID IGDB non disponibile'}
+                      title="Cerca e aggiorna metadati da IGDB"
                     >
                       <RefreshIcon className="w-5 h-5" />
                     </Button>
@@ -1010,7 +1026,7 @@ function GameExplorer() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Cerca gioco su IGDB
+                Cerca un gioco su IGDB per sostituire i metadati attuali
               </label>
               <div className="flex space-x-2">
                 <Input
@@ -1018,6 +1034,7 @@ function GameExplorer() {
                   placeholder="Cerca gioco..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && searchIGDBGame(searchQuery)}
                 />
                 <Button onClick={() => searchIGDBGame(searchQuery)} disabled={isSearching}>
                   {isSearching ? 'Ricerca...' : 'Cerca'}
@@ -1031,47 +1048,63 @@ function GameExplorer() {
               </div>
             )}
 
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 space-y-4 h-64 overflow-y-auto border rounded-lg">
               {searchResults.map((result) => (
                 <div
-                  key={result.igdb_id}
-                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                  key={result.id}
+                  className="flex items-center justify-between p-3 border-b last:border-b-0 hover:bg-gray-50 dark:hover:bg-gray-700"
                 >
-                  <div className="flex items-center space-x-3">
-                    {result.cover?.thumb_url && (
+                  <div className="flex items-center space-x-3 flex-1 min-w-0">
+                    {result.cover?.url && (
                       <img
-                        src={result.cover.thumb_url}
+                        src={result.cover.url}
                         alt={result.name}
-                        className="w-12 h-12 object-cover rounded"
+                        className="w-12 h-12 object-cover rounded flex-shrink-0"
                         onError={(e) => {
                           e.target.onerror = null
                           e.target.src = '/default_cover.png'
                         }}
                       />
                     )}
-                    <div>
-                      <div className="font-medium">{result.name}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium truncate">{result.name}</div>
                       <div className="text-sm text-gray-500">
-                        {result.release_date ? new Date(result.release_date * 1000).getFullYear() : 'N/A'} 
-                        {result.total_rating && ` • ${Math.round(result.total_rating)}/100`}
+                        {result.first_release_date ? new Date(result.first_release_date * 1000).getFullYear() : 'N/A'} 
+                        {result.rating && ` • ${Math.round(result.rating)}/100`}
                       </div>
+                      {result.platforms && (
+                        <div className="text-xs text-gray-400 truncate">
+                          Piattaforme: {result.platforms.map(p => p.name).join(', ')}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <Button
                     size="small"
                     onClick={() => handleUpdateMetadata(result)}
+                    className="w-20 ml-3 flex-shrink-0"
                   >
-                    Usa Questi Metadati
+                    Usa Dati
                   </Button>
                 </div>
               ))}
+              {searchResults.length === 0 && (
+                <div className="p-8 text-center text-gray-500">
+                  Nessun risultato trovato. Prova a cercare un gioco.
+                </div>
+              )}
             </div>
           </div>
         </ModalBody>
         <ModalFooter>
-          <Button layout="outline" onClick={() => setIsMetadataModalOpen(false)}>
-            Chiudi
-          </Button>
+          <div className="w-full flex justify-between items-center">
+            <span className="text-sm text-gray-500">
+              I metadati del gioco verranno sostituiti con quelli selezionati
+            </span>
+            <Button layout="outline" onClick={() => setIsMetadataModalOpen(false)}>
+              Chiudi
+            </Button>
+          </div>
         </ModalFooter>
       </Modal>
     </>

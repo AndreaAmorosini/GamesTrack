@@ -95,6 +95,11 @@ function MyLibrary() {
 
   // Versione sincrona per il rendering (usa solo la cache)
   const getConsoleNameSync = (consoleCode) => {
+    // Gestisci il caso null
+    if (consoleCode === null || consoleCode === undefined) {
+      return null
+    }
+    
     // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
     if (typeof consoleCode === 'string') {
       return consoleCode
@@ -117,9 +122,16 @@ function MyLibrary() {
       return <span className="text-gray-400">Nessuna console</span>
     }
     
+    // Filtra i valori null e undefined
+    const validConsoles = consoles.filter(console => console !== null && console !== undefined)
+    
+    if (validConsoles.length === 0) {
+      return <span className="text-gray-400">Nessuna console</span>
+    }
+    
     return (
       <div className="flex flex-wrap gap-1">
-        {consoles.map((console, idx) => (
+        {validConsoles.map((console, idx) => (
           <Badge key={idx} type="success">
             {getConsoleNameSync(console)}
           </Badge>
@@ -136,7 +148,8 @@ function MyLibrary() {
     games.forEach(game => {
       if (game.console && Array.isArray(game.console)) {
         game.console.forEach(consoleId => {
-          if (typeof consoleId === 'number' && !consoleNamesCache[consoleId]) {
+          // Filtra i valori null e undefined
+          if (consoleId !== null && consoleId !== undefined && typeof consoleId === 'number' && !consoleNamesCache[consoleId]) {
             consoleIds.push(consoleId)
           }
         })
@@ -546,14 +559,27 @@ function MyLibrary() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    {game.console && game.console.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {game.console.map((consoleId, idx) => (
-                          <Badge key={idx} type="success">
-                            {getConsoleNameSync(consoleId)}
-                          </Badge>
-                        ))}
-                      </div>
+                    {game.console && game.console.length > 0 ? (
+                      (() => {
+                        // Filtra i valori null e undefined
+                        const validConsoles = game.console.filter(console => console !== null && console !== undefined)
+                        
+                        if (validConsoles.length === 0) {
+                          return <span className="text-gray-400">Nessuna console</span>
+                        }
+                        
+                        return (
+                          <div className="flex flex-wrap gap-1">
+                            {validConsoles.map((consoleId, idx) => (
+                              <Badge key={idx} type="success">
+                                {getConsoleNameSync(consoleId)}
+                              </Badge>
+                            ))}
+                          </div>
+                        )
+                      })()
+                    ) : (
+                      <span className="text-gray-400">Nessuna console</span>
                     )}
                   </TableCell>
                   <TableCell>

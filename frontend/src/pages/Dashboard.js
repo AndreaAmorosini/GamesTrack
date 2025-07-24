@@ -86,7 +86,10 @@ function Dashboard() {
     setIsSearching(true)
     setSearchError('')
     try {
-      const response = await searchIGDBGames(searchTerm, null, null, page, resultsPerPage)
+      const response = await searchIGDBGames(searchTerm, {
+        page: page,
+        limit: resultsPerPage
+      })
       setSearchResults(response.games || [])
       // Carica i nomi delle console per i risultati
       loadConsoleNames(response.games || [])
@@ -519,8 +522,9 @@ function Dashboard() {
         )}
 
         {searchResults.length > 0 && (
-          <TableContainer className="mt-4">
-            <Table>
+          <div className="mt-4 overflow-x-auto">
+            <TableContainer>
+              <Table>
               <TableHeader>
                 <tr>
                   <TableCell>Gioco</TableCell>
@@ -561,6 +565,14 @@ function Dashboard() {
                             {platform}
                           </Badge>
                         ))}
+                        {!game.platform_names && game.platforms?.map((platform, idx) => (
+                          <Badge key={idx} type="success">
+                            {platform.name || platform.abbreviation || getConsoleNameSync(platform.id || platform)}
+                          </Badge>
+                        ))}
+                        {(!game.platform_names && !game.platforms) && (
+                          <span className="text-gray-400 text-sm">N/A</span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -570,6 +582,14 @@ function Dashboard() {
                             {genre}
                           </Badge>
                         ))}
+                        {!game.genre_names && game.genres?.map((genre, idx) => (
+                          <Badge key={idx} type="info">
+                            {typeof genre === 'string' ? genre : genre.name}
+                          </Badge>
+                        ))}
+                        {(!game.genre_names && !game.genres) && (
+                          <span className="text-gray-400 text-sm">N/A</span>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -613,6 +633,7 @@ function Dashboard() {
               </TableBody>
             </Table>
           </TableContainer>
+        </div>
         )}
       </div>
 

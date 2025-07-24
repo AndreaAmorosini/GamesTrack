@@ -146,7 +146,7 @@ export const updateUserProfile = async (userData) => {
     }
 };
 
-export const searchIGDBGames = async (name, platform, company, page, limit) => {
+export const searchIGDBGames = async (name, options = {}) => {
     // Verifica il token prima di fare la ricerca
     const token = localStorage.getItem('token');
     if (!token) {
@@ -156,11 +156,9 @@ export const searchIGDBGames = async (name, platform, company, page, limit) => {
 
     try {
         const queryParams = new URLSearchParams({
-            ...(name && { name }),
-            ...(platform && { platform: platform }),
-            ...(company && { company: company }),
-            page: page,
-            limit: limit
+            name,
+            page: options.page || 1,
+            limit: options.limit || 10
         });
 
         const response = await fetch(`${API_URL}/search/igdb?${queryParams}`, {
@@ -638,9 +636,14 @@ export const getUserDashboard = async () => {
 
 export const updateGameMetadata = async (gameId, igdbId) => {
   try {
+    // Verifica che i parametri siano validi
+    if (!gameId || !igdbId) {
+      throw new Error('ID del gioco e ID IGDB sono richiesti');
+    }
+
     const queryParams = new URLSearchParams({
       game_id: gameId,
-      igdb_id: igdbId
+      igdb_id: parseInt(igdbId, 10) // Assicurati che igdb_id sia un numero
     });
 
     const response = await fetch(`${API_URL}/games/update-metadata?${queryParams}`, {
