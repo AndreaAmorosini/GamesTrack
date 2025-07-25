@@ -450,6 +450,7 @@ function MyLibrary() {
             <option value="">Tutte le piattaforme</option>
             <option value="steam">Steam</option>
             <option value="psn">PlayStation Network</option>
+            <option value="other">Manuali</option>
           </Select>
 
           <Select
