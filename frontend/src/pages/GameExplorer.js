@@ -462,7 +462,13 @@ function GameExplorer() {
       alert('Metadati aggiornati con successo!');
     } catch (error) {
       console.error('Errore nell\'aggiornamento metadati:', error);
-      alert(error.message || 'Errore durante l\'aggiornamento dei metadati');
+      
+      // Gestione specifica per l'errore di chiave duplicata
+      if (error.message && error.message.includes('E11000 duplicate key error')) {
+        alert('Gioco già presente, scegline un altro');
+      } else {
+        alert(error.message || 'Errore durante l\'aggiornamento dei metadati');
+      }
     }
   };
 
@@ -537,7 +543,7 @@ function GameExplorer() {
         <Table>
           <TableHeader>
             <tr>
-              <TableCell>
+              <TableCell className="w-1/4 min-w-64">
                 <Button
                   layout="link"
                   onClick={() => handleSortChange('name')}
@@ -549,13 +555,13 @@ function GameExplorer() {
                   )}
                 </Button>
               </TableCell>
-              <TableCell>Piattaforme</TableCell>
-              <TableCell>Generi</TableCell>
-              <TableCell>Publisher</TableCell>
-              <TableCell>Sviluppatore</TableCell>
-              <TableCell>Modalità di Gioco</TableCell>
-              <TableCell>ID Piattaforme</TableCell>
-              <TableCell>
+              <TableCell className="w-1/6 min-w-48">Piattaforme</TableCell>
+              <TableCell className="w-1/6 min-w-48">Generi</TableCell>
+              <TableCell className="w-1/8 min-w-32">Publisher</TableCell>
+              <TableCell className="w-1/8 min-w-32">Sviluppatore</TableCell>
+              <TableCell className="w-1/8 min-w-40">Modalità di Gioco</TableCell>
+              <TableCell className="w-1/8 min-w-32">ID Piattaforme</TableCell>
+              <TableCell className="w-1/8 min-w-32">
                 <Button
                   layout="link"
                   onClick={() => handleSortChange('release_date')}
@@ -567,7 +573,7 @@ function GameExplorer() {
                   )}
                 </Button>
               </TableCell>
-              <TableCell>
+              <TableCell className="w-1/8 min-w-32">
                 <Button
                   layout="link"
                   onClick={() => handleSortChange('total_rating')}
@@ -579,7 +585,7 @@ function GameExplorer() {
                   )}
                 </Button>
               </TableCell>
-              <TableCell>
+              <TableCell className="w-1/8 min-w-32">
                 <Button
                   layout="link"
                   onClick={() => handleSortChange('total_rating_count')}
@@ -591,14 +597,14 @@ function GameExplorer() {
                   )}
                 </Button>
               </TableCell>
-              <TableCell>Stato</TableCell>
-              <TableCell>Azioni</TableCell>
+              <TableCell className="w-1/8 min-w-32">Stato</TableCell>
+              <TableCell className="w-1/8 min-w-32">Azioni</TableCell>
             </tr>
           </TableHeader>
           <TableBody>
             {games.map((game, i) => (
               <TableRow key={i}>
-                <TableCell>
+                <TableCell className="w-1/4 min-w-64">
                   <div className="flex items-center text-sm">
                     {/* <img
                       className="hidden w-12 h-12 mr-3 md:block object-cover rounded"
@@ -619,17 +625,17 @@ function GameExplorer() {
                       }}
                     />
 
-                    <div>
-                      <p className="font-semibold">{game.name}</p>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold truncate">{game.name}</p>
                       {game.original_name && game.original_name !== game.name && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                           {game.original_name}
                         </p>
                       )}
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/6 min-w-48">
                   <div className="flex flex-wrap gap-1">
                     {game.platform_names?.map((platform, idx) => (
                       <Badge key={idx} type="success">
@@ -643,7 +649,7 @@ function GameExplorer() {
                     ))}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/6 min-w-48">
                   <div className="flex flex-wrap gap-1">
                     {game.genre_names?.map((genre, idx) => (
                       <Badge key={idx} type="info">
@@ -657,17 +663,17 @@ function GameExplorer() {
                     ))}
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div className="text-sm">
+                <TableCell className="w-1/8 min-w-32">
+                  <div className="text-sm truncate">
                     {game.publisher_names?.join(', ') || game.publisher || 'N/A'}
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div className="text-sm">
+                <TableCell className="w-1/8 min-w-32">
+                  <div className="text-sm truncate">
                     {game.developer_names?.join(', ') || game.developer || 'N/A'}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/8 min-w-40">
                   <div className="flex flex-wrap gap-1">
                     {game.game_mode_names?.map((mode, idx) => (
                       <Badge key={idx} type="warning">
@@ -681,7 +687,7 @@ function GameExplorer() {
                     ))}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/8 min-w-32">
                   <div className="text-xs space-y-1">
                     {game.steam_game_id && (
                       <div className="text-blue-600 dark:text-blue-400">
@@ -698,12 +704,12 @@ function GameExplorer() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/8 min-w-32">
                   <span className="text-sm">
                     {game.release_date ? new Date(game.release_date * 1000).toLocaleDateString() : 'TBA'}
                   </span>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/8 min-w-32">
                   <div className="text-sm">
                     {game.total_rating ? (
                       <div>
@@ -719,12 +725,12 @@ function GameExplorer() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/8 min-w-32">
                   <span className="text-sm">
                     {game.total_rating_count || 0}
                   </span>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/8 min-w-32">
                   <div className="text-sm">
                     {game.toVerify ? (
                       <Badge type="warning">Da Verificare</Badge>
@@ -733,7 +739,7 @@ function GameExplorer() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/8 min-w-32">
                   <div className="flex items-center space-x-2">
                     <Button
                       layout="link"
