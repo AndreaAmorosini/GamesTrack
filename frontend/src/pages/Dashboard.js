@@ -528,7 +528,7 @@ function Dashboard() {
               <TableHeader>
                 <tr>
                   <TableCell className="w-1/3 min-w-64">Gioco</TableCell>
-                  <TableCell className="w-1/4 min-w-48">Piattaforme</TableCell>
+                  <TableCell className="w-1/4 min-w-48">Console</TableCell>
                   <TableCell className="w-1/4 min-w-48">Generi</TableCell>
                   <TableCell className="w-1/6 min-w-32">Valutazione</TableCell>
                   <TableCell className="w-1/6 min-w-32">Azioni</TableCell>
