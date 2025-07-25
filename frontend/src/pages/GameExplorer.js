@@ -19,7 +19,7 @@ import {
   ModalFooter,
 } from '@windmill/react-ui'
 import { HeartIcon, GamesIcon, SearchIcon, FilterIcon, RefreshIcon } from '../icons'
-import { getAllGames, getGenres, getCompanies, getGameModes, getConsoles, addGameToWishlist, addGameToLibrary, getLibraryConsolesForGame, getWishlistConsolesForGame, updateGameMetadata, searchIGDBGames } from '../services/api'
+import { getAllGames, getGenres, getCompanies, getGameModes, getConsoles, addGameToWishlist, addGameToLibrary, getLibraryConsolesForGame, getWishlistConsolesForGame, updateGameMetadata, searchIGDBGames, getConsoleNames } from '../services/api'
 
 function GameExplorer() {
   // Stati per i filtri
@@ -74,6 +74,9 @@ function GameExplorer() {
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
 
+  // Cache per i nomi delle console
+  const [consoleNamesCache, setConsoleNamesCache] = useState({})
+
   const resultsPerPage = 20
 
   // Carica i dati di riferimento
@@ -98,6 +101,54 @@ function GameExplorer() {
     
     loadReferenceData()
   }, [])
+
+  // Funzione per caricare i nomi delle console
+  const loadConsoleNames = async (games) => {
+    const consoleIds = []
+    
+    // Raccogli tutti gli ID delle console dai giochi
+    games.forEach(game => {
+      if (game.platforms && Array.isArray(game.platforms)) {
+        game.platforms.forEach(platform => {
+          const platformId = typeof platform === 'object' ? platform.id : platform
+          if (typeof platformId === 'number' && !consoleNamesCache[platformId]) {
+            consoleIds.push(platformId)
+          }
+        })
+      }
+    })
+    
+    // Se ci sono nuovi ID, recuperali dal database
+    if (consoleIds.length > 0) {
+      try {
+        const uniqueIds = [...new Set(consoleIds)]
+        const response = await getConsoleNames(uniqueIds)
+        
+        setConsoleNamesCache(prev => ({
+          ...prev,
+          ...response.console_names
+        }))
+      } catch (error) {
+        console.error('Error loading console names:', error)
+      }
+    }
+  }
+
+  // Funzione per ottenere il nome della console (versione sincrona per il rendering)
+  const getConsoleNameSync = (consoleCode) => {
+    // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
+    if (typeof consoleCode === 'string') {
+      return consoleCode
+    }
+    
+    // Se è un numero (ID console), controlla la cache
+    if (consoleNamesCache[consoleCode]) {
+      return consoleNamesCache[consoleCode]
+    }
+    
+    // Se non è in cache, restituisci un placeholder
+    return `Console ${consoleCode}`
+  }
 
   // Funzione per cercare i giochi
   const searchGames = async () => {
@@ -135,6 +186,9 @@ function GameExplorer() {
       const response = await getAllGames(searchParams)
       setGames(response.games || [])
       setTotalResults(response.pagination?.total_count || 0)
+      
+      // Carica i nomi delle console per i risultati
+      loadConsoleNames(response.games || [])
     } catch (err) {
       setError('Errore durante la ricerca dei giochi: ' + (err.message || 'Errore sconosciuto'))
       console.error(err)
@@ -241,75 +295,13 @@ function GameExplorer() {
       return consoleId
     }
     
-    // Se è un numero (ID console), convertilo
-    switch (consoleId) {
-      case 6:
-        return 'PC (Microsoft Windows)'
-      case 48:
-        return 'PlayStation 4'
-      case 167:
-        return 'PlayStation 5'
-      case 130:
-        return 'Nintendo Switch'
-      case 49:
-        return 'Xbox One'
-      case 169:
-        return 'Xbox Series X|S'
-      case 3:
-        return 'Linux'
-      case 14:
-        return 'Mac'
-      case 7:
-        return 'Nintendo 3DS'
-      case 9:
-        return 'Nintendo DS'
-      case 11:
-        return 'Xbox'
-      case 12:
-        return 'Xbox 360'
-      case 13:
-        return 'PlayStation'
-      case 15:
-        return 'PlayStation 2'
-      case 16:
-        return 'PlayStation 3'
-      case 17:
-        return 'Nintendo 64'
-      case 18:
-        return 'GameCube'
-      case 19:
-        return 'Wii'
-      case 20:
-        return 'Wii U'
-      case 21:
-        return 'Game Boy'
-      case 22:
-        return 'Game Boy Color'
-      case 23:
-        return 'Game Boy Advance'
-      case 24:
-        return 'Sega Genesis'
-      case 25:
-        return 'Sega Saturn'
-      case 26:
-        return 'Sega Dreamcast'
-      case 27:
-        return 'Sega Game Gear'
-      case 28:
-        return 'Sega Master System'
-      case 29:
-        return 'Sega Mega Drive'
-      case 30:
-        return 'Sega CD'
-      case 31:
-        return 'Sega 32X'
-      case 50:
-        return 'Xbox Series X'
-      case 51:
-        return 'Xbox Series S'
-      default:
-        return `Console ${consoleId}`
+    // Se è un numero (ID console), controlla la cache
+    if (consoleNamesCache[consoleId]) {
+      return consoleNamesCache[consoleId]
     }
+    
+    // Se non è in cache, restituisci un placeholder
+    return `Console ${consoleId}`
   }
 
   // Funzione per ottenere le console disponibili per un gioco

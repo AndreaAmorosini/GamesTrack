@@ -19,13 +19,15 @@ import {
   ModalFooter,
 } from '@windmill/react-ui'
 import { HeartIcon, GamesIcon } from '../icons'
-import { searchIGDBGames, addGameToWishlist, addGameToLibrary, getPlatformMapping, getLibraryConsolesForGame, getWishlistConsolesForGame } from '../services/api'
+import { searchIGDBGames, addGameToWishlist, addGameToLibrary, getPlatformMapping, getLibraryConsolesForGame, getWishlistConsolesForGame, getConsoleNames } from '../services/api'
 
 function GameSearch() {
   // Stati per la ricerca
   const [searchTerm, setSearchTerm] = useState('')
   const [platform, setPlatform] = useState('')
   const [company, setCompany] = useState('')
+  const [selectedGenre, setSelectedGenre] = useState('')
+  const [selectedConsole, setSelectedConsole] = useState('')
   
   // Stati per i risultati
   const [games, setGames] = useState([])
@@ -37,12 +39,19 @@ function GameSearch() {
   const [libraryLoading, setLibraryLoading] = useState({})
   const [platformMapping, setPlatformMapping] = useState({})
   
+  // Stati per l'ordinamento
+  const [sortField, setSortField] = useState('')
+  const [sortDirection, setSortDirection] = useState('asc')
+  
   // Stati per la modal di selezione console
   const [isConsoleModalOpen, setIsConsoleModalOpen] = useState(false)
   const [selectedGame, setSelectedGame] = useState(null)
   const [selectedAction, setSelectedAction] = useState('') // 'wishlist' o 'library'
   const [selectedConsoles, setSelectedConsoles] = useState([]) // Array di console selezionate
   const [alreadyAddedConsoles, setAlreadyAddedConsoles] = useState([])
+  
+  // Cache per i nomi delle console
+  const [consoleNamesCache, setConsoleNamesCache] = useState({})
   
   const resultsPerPage = 10
 
@@ -59,6 +68,148 @@ function GameSearch() {
     
     loadPlatformMapping()
   }, [])
+
+  // Funzione per gestire l'ordinamento
+  const handleSort = (field) => {
+    if (sortField === field) {
+      // Se clicchi sullo stesso campo, inverte la direzione
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Se clicchi su un nuovo campo, imposta la direzione di default
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  // Funzione per ordinare i giochi
+  const sortGames = (gamesToSort) => {
+    if (!sortField) return gamesToSort
+
+    return [...gamesToSort].sort((a, b) => {
+      let aValue, bValue
+
+      switch (sortField) {
+        case 'release_date':
+          aValue = a.release_date ? new Date(a.release_date).getTime() : 0
+          bValue = b.release_date ? new Date(b.release_date).getTime() : 0
+          break
+        case 'total_rating':
+          aValue = a.total_rating || 0
+          bValue = b.total_rating || 0
+          break
+        default:
+          return 0
+      }
+
+      if (sortDirection === 'asc') {
+        return aValue > bValue ? 1 : -1
+      } else {
+        return aValue < bValue ? 1 : -1
+      }
+    })
+  }
+
+  // Funzione per ottenere l'icona di ordinamento
+  const getSortIcon = (field) => {
+    if (sortField !== field) {
+      return '↕️'
+    }
+    return sortDirection === 'asc' ? '↑' : '↓'
+  }
+
+  // Funzione per estrarre tutti i generi disponibili dai risultati
+  const getAvailableGenres = () => {
+    const allGenres = new Set()
+    games.forEach(game => {
+      if (game.genres && Array.isArray(game.genres)) {
+        game.genres.forEach(genre => {
+          if (genre) allGenres.add(genre)
+        })
+      }
+    })
+    return Array.from(allGenres).sort()
+  }
+
+  // Funzione per estrarre tutte le console disponibili dai risultati
+  const getAvailableConsoles = () => {
+    const allConsoles = new Set()
+    games.forEach(game => {
+      if (game.platforms && Array.isArray(game.platforms)) {
+        game.platforms.forEach(platform => {
+          if (platform && platform.name) {
+            allConsoles.add(platform.name)
+          }
+        })
+      }
+    })
+    return Array.from(allConsoles).sort()
+  }
+
+  // Funzione per filtrare i giochi per genere
+  const filterGamesByGenre = (gamesToFilter) => {
+    if (!selectedGenre) return gamesToFilter
+    return gamesToFilter.filter(game => 
+      game.genres && game.genres.includes(selectedGenre)
+    )
+  }
+
+  // Funzione per filtrare i giochi per console
+  const filterGamesByConsole = (gamesToFilter) => {
+    if (!selectedConsole) return gamesToFilter
+    return gamesToFilter.filter(game => 
+      game.platforms && game.platforms.some(platform => 
+        platform.name === selectedConsole
+      )
+    )
+  }
+
+  // Funzione per caricare i nomi delle console
+  const loadConsoleNames = async (games) => {
+    const consoleIds = []
+    
+    // Raccogli tutti gli ID delle console dai giochi
+    games.forEach(game => {
+      if (game.platforms && Array.isArray(game.platforms)) {
+        game.platforms.forEach(platform => {
+          const platformId = typeof platform === 'object' ? platform.id : platform
+          if (typeof platformId === 'number' && !consoleNamesCache[platformId]) {
+            consoleIds.push(platformId)
+          }
+        })
+      }
+    })
+    
+    // Se ci sono nuovi ID, recuperali dal database
+    if (consoleIds.length > 0) {
+      try {
+        const uniqueIds = [...new Set(consoleIds)]
+        const response = await getConsoleNames(uniqueIds)
+        
+        setConsoleNamesCache(prev => ({
+          ...prev,
+          ...response.console_names
+        }))
+      } catch (error) {
+        console.error('Error loading console names:', error)
+      }
+    }
+  }
+
+  // Funzione per ottenere il nome della console (versione sincrona per il rendering)
+  const getConsoleNameSync = (consoleCode) => {
+    // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
+    if (typeof consoleCode === 'string') {
+      return consoleCode
+    }
+    
+    // Se è un numero (ID console), controlla la cache
+    if (consoleNamesCache[consoleCode]) {
+      return consoleNamesCache[consoleCode]
+    }
+    
+    // Se non è in cache, restituisci un placeholder
+    return `Console ${consoleCode}`
+  }
 
   // Funzione per aprire la modal di selezione console
   const openConsoleModal = async (game, action) => {
@@ -157,92 +308,8 @@ function GameSearch() {
     return `https:${imageUrl}`
   }
 
-  // Funzione per ottenere il nome della console
-  const getConsoleName = (consoleId) => {
-    // Se consoleId è già una stringa (nome console), restituiscilo direttamente
-    if (typeof consoleId === 'string') {
-      return consoleId
-    }
-    
-    // Se è un numero (ID console), convertilo
-    switch (consoleId) {
-      case 6:
-        return 'PC (Microsoft Windows)'
-      case 48:
-        return 'PlayStation 4'
-      case 167:
-        return 'PlayStation 5'
-      case 130:
-        return 'Nintendo Switch'
-      case 49:
-        return 'Xbox One'
-      case 169:
-        return 'Xbox Series X|S'
-      case 3:
-        return 'Linux'
-      case 14:
-        return 'Mac'
-      case 7:
-        return 'Nintendo 3DS'
-      case 9:
-        return 'Nintendo DS'
-      case 11:
-        return 'Xbox'
-      case 12:
-        return 'Xbox 360'
-      case 13:
-        return 'PlayStation'
-      case 15:
-        return 'PlayStation 2'
-      case 16:
-        return 'PlayStation 3'
-      case 17:
-        return 'Nintendo 64'
-      case 18:
-        return 'GameCube'
-      case 19:
-        return 'Wii'
-      case 20:
-        return 'Wii U'
-      case 21:
-        return 'Game Boy'
-      case 22:
-        return 'Game Boy Color'
-      case 23:
-        return 'Game Boy Advance'
-      case 24:
-        return 'Sega Genesis'
-      case 25:
-        return 'Sega Saturn'
-      case 26:
-        return 'Sega Dreamcast'
-      case 27:
-        return 'Sega Game Gear'
-      case 28:
-        return 'Sega Master System'
-      case 29:
-        return 'Sega Mega Drive'
-      case 30:
-        return 'Sega CD'
-      case 31:
-        return 'Sega 32X'
-      case 50:
-        return 'Xbox Series X'
-      case 51:
-        return 'Xbox Series S'
-      default:
-        // Cerca nel mapping inverso come fallback
-        for (const [name, id] of Object.entries(platformMapping)) {
-          if (id === consoleId) {
-            return name
-          }
-        }
-        return `Console ${consoleId}`
-    }
-  }
-
   // Funzione per ottenere le console disponibili per un gioco
-  const getAvailableConsoles = (game) => {
+  const getAvailableConsolesForGame = (game) => {
     if (!game || !game.platforms || game.platforms.length === 0) {
       return []
     }
@@ -252,12 +319,12 @@ function GameSearch() {
       if (typeof platform === 'object' && platform.id) {
         availableConsoles.push({
           id: platform.id,
-          name: platform.name || platform.abbreviation || getConsoleName(platform.id)
+          name: platform.name || platform.abbreviation || getConsoleNameSync(platform.id)
         })
       } else if (typeof platform === 'number') {
         availableConsoles.push({
           id: platform,
-          name: getConsoleName(platform)
+          name: getConsoleNameSync(platform)
         })
       }
     }
@@ -288,9 +355,21 @@ function GameSearch() {
     setIsLoading(true)
     setError('')
     try {
-      const data = await searchIGDBGames(searchTerm, platform, company, page, resultsPerPage)
+      // Correggo la chiamata API per passare i parametri correttamente
+      const data = await searchIGDBGames(searchTerm, {
+        platform: platform || undefined,
+        company: company || undefined,
+        page: page,
+        limit: resultsPerPage
+      })
       setGames(data.games || [])
       setTotalResults(data.pagination?.total_returned || 0)
+      // Reset dei filtri quando si fa una nuova ricerca
+      setSelectedGenre('')
+      setSelectedConsole('')
+      
+      // Carica i nomi delle console per i risultati
+      loadConsoleNames(data.games || [])
     } catch (err) {
       // Non mostrare errori se è un errore di autenticazione
       if (err.message !== 'Sessione scaduta') {
@@ -320,13 +399,20 @@ function GameSearch() {
     }
   }, [page])
 
+  // Filtra e ordina i giochi
+  const filteredByGenre = filterGamesByGenre(games)
+  const filteredByConsole = filterGamesByConsole(filteredByGenre)
+  const sortedGames = sortGames(filteredByConsole)
+  const availableGenres = getAvailableGenres()
+  const availableConsoles = getAvailableConsoles()
+
   return (
     <>
       <PageTitle>Cerca Giochi</PageTitle>
 
       {/* Form di ricerca */}
       <div className="px-4 py-3 mb-8 bg-white rounded-lg shadow-md dark:bg-gray-800">
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-5">
           <div>
             <Input
               className="mt-1"
@@ -336,20 +422,36 @@ function GameSearch() {
               onKeyPress={(e) => e.key === 'Enter' && performSearch()}
             />
           </div>
-          
+
           <div>
             <Select
               className="mt-1"
-              value={platform}
-              onChange={(e) => setPlatform(e.target.value)}
+              value={selectedGenre}
+              onChange={(e) => setSelectedGenre(e.target.value)}
+              disabled={games.length === 0}
             >
-              <option value="">Tutte le piattaforme</option>
-              <option value="6">PC (Microsoft Windows)</option>
-              <option value="48">PlayStation 4</option>
-              <option value="167">PlayStation 5</option>
-              <option value="130">Nintendo Switch</option>
-              <option value="3">Linux</option>
-              <option value="14">Mac</option>
+              <option value="">Tutti i generi</option>
+              {availableGenres.map((genre) => (
+                <option key={genre} value={genre}>
+                  {genre}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <Select
+              className="mt-1"
+              value={selectedConsole}
+              onChange={(e) => setSelectedConsole(e.target.value)}
+              disabled={games.length === 0}
+            >
+              <option value="">Tutte le console</option>
+              {availableConsoles.map((console) => (
+                <option key={console} value={console}>
+                  {console}
+                </option>
+              ))}
             </Select>
           </div>
           
@@ -381,13 +483,31 @@ function GameSearch() {
               <TableCell>Generi</TableCell>
               <TableCell>Sviluppatore</TableCell>
               <TableCell>Publisher</TableCell>
-              <TableCell>Data di Uscita</TableCell>
-              <TableCell>Valutazione</TableCell>
+              <TableCell>
+                <Button
+                  layout="link"
+                  onClick={() => handleSort('release_date')}
+                  className="flex items-center space-x-1 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                >
+                  <span>Data di Uscita</span>
+                  <span className="text-xs">{getSortIcon('release_date')}</span>
+                </Button>
+              </TableCell>
+              <TableCell>
+                <Button
+                  layout="link"
+                  onClick={() => handleSort('total_rating')}
+                  className="flex items-center space-x-1 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                >
+                  <span>Valutazione</span>
+                  <span className="text-xs">{getSortIcon('total_rating')}</span>
+                </Button>
+              </TableCell>
               <TableCell>Azioni</TableCell>
             </tr>
           </TableHeader>
           <TableBody>
-            {games.map((game, i) => (
+            {sortedGames.map((game, i) => (
               <TableRow key={i}>
                 <TableCell>
                   <div className="flex items-center text-sm">
@@ -426,7 +546,7 @@ function GameSearch() {
                   <div className="flex flex-wrap gap-1">
                     {game.platforms?.map((platform, idx) => (
                       <Badge key={idx} type="success">
-                        {platform.name || platform.abbreviation || `Platform ${platform.id}`}
+                        {platform.name || platform.abbreviation || getConsoleNameSync(platform.id)}
                       </Badge>
                     ))}
                   </div>
@@ -522,7 +642,7 @@ function GameSearch() {
               </p>
               
               <div className="space-y-2">
-                {getAvailableConsoles(selectedGame).map((console) => {
+                {getAvailableConsolesForGame(selectedGame).map((console) => {
                   const isAlreadyAdded = alreadyAddedConsoles.includes(console.id)
                   return (
                     <label 
@@ -553,7 +673,7 @@ function GameSearch() {
                 })}
               </div>
               
-              {getAvailableConsoles(selectedGame).length === 0 && (
+              {getAvailableConsolesForGame(selectedGame).length === 0 && (
                 <p className="text-yellow-400 text-sm">
                   Nessuna console disponibile per questo gioco.
                 </p>
@@ -568,7 +688,7 @@ function GameSearch() {
         <ModalFooter className="flex justify-center">
           <Button 
             onClick={confirmAddGame}
-            disabled={selectedConsoles.length === 0 || getAvailableConsoles(selectedGame).length === 0}
+            disabled={selectedConsoles.length === 0 || getAvailableConsolesForGame(selectedGame).length === 0}
             className="bg-blue-600 hover:bg-blue-700"
           >
             {selectedAction === 'wishlist' ? 'Aggiungi alla Wishlist' : 'Aggiungi alla Libreria'}
