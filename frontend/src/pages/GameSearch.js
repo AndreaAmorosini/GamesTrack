@@ -479,7 +479,7 @@ function GameSearch() {
           <TableHeader>
             <tr>
               <TableCell>Gioco</TableCell>
-              <TableCell>Piattaforme Disponibili</TableCell>
+              <TableCell>Console</TableCell>
               <TableCell>Generi</TableCell>
               <TableCell>Sviluppatore</TableCell>
               <TableCell>Publisher</TableCell>

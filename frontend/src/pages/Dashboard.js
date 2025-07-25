@@ -527,17 +527,17 @@ function Dashboard() {
               <Table>
               <TableHeader>
                 <tr>
-                  <TableCell>Gioco</TableCell>
-                  <TableCell>Piattaforme</TableCell>
-                  <TableCell>Generi</TableCell>
-                  <TableCell>Valutazione</TableCell>
-                  <TableCell>Azioni</TableCell>
+                  <TableCell className="w-1/3 min-w-64">Gioco</TableCell>
+                  <TableCell className="w-1/4 min-w-48">Piattaforme</TableCell>
+                  <TableCell className="w-1/4 min-w-48">Generi</TableCell>
+                  <TableCell className="w-1/6 min-w-32">Valutazione</TableCell>
+                  <TableCell className="w-1/6 min-w-32">Azioni</TableCell>
                 </tr>
               </TableHeader>
               <TableBody>
                 {searchResults.map((game, i) => (
                   <TableRow key={i}>
-                    <TableCell>
+                    <TableCell className="w-1/3 min-w-64">
                       <div className="flex items-center text-sm">
                         <img
                           className="hidden w-12 h-12 mr-3 md:block object-cover rounded"
@@ -548,17 +548,17 @@ function Dashboard() {
                             e.target.src = '/default_cover.png'
                           }}
                         />
-                        <div>
-                          <p className="font-semibold">{game.name}</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold truncate">{game.name}</p>
                           {game.original_name && game.original_name !== game.name && (
-                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                               {game.original_name}
                             </p>
                           )}
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-1/4 min-w-48">
                       <div className="flex flex-wrap gap-1">
                         {game.platform_names?.map((platform, idx) => (
                           <Badge key={idx} type="success">
@@ -575,7 +575,7 @@ function Dashboard() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-1/4 min-w-48">
                       <div className="flex flex-wrap gap-1">
                         {game.genre_names?.map((genre, idx) => (
                           <Badge key={idx} type="info">
@@ -592,7 +592,7 @@ function Dashboard() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-1/6 min-w-32">
                       <div className="text-sm">
                         {game.total_rating ? (
                           <div>
@@ -608,7 +608,7 @@ function Dashboard() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-1/6 min-w-32">
                       <div className="flex space-x-2">
                         <Button
                           layout="link"

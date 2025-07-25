@@ -555,7 +555,7 @@ function GameExplorer() {
                   )}
                 </Button>
               </TableCell>
-              <TableCell className="w-1/6 min-w-48">Piattaforme</TableCell>
+              <TableCell className="w-1/6 min-w-48">Console</TableCell>
               <TableCell className="w-1/6 min-w-48">Generi</TableCell>
               <TableCell className="w-1/8 min-w-32">Publisher</TableCell>
               <TableCell className="w-1/8 min-w-32">Sviluppatore</TableCell>
