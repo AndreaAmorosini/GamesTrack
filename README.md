@@ -1,25 +1,25 @@
 # GamesTrack 🎮
 
-Un sistema di gestione della libreria videoludica personale con sincronizzazione automatica da Steam e PSN, wishlist e ricerca giochi tramite database IGDB.
+A personal video game library management system with automatic synchronization from Steam and PSN, wishlist and game search through IGDB database.
 
-## Caratteristiche
+## Features
 
-- Sincronizzazione automatica della libreria da Steam e PlayStation Network
-- Gestione wishlist con supporto multi-piattaforma
-- Ricerca e esplorazione di giochi tramite database IGDB
-- Dashboard con statistiche dettagliate per utente
-- Aggiornamento metadati giochi in tempo reale
+- Automatic library synchronization from Steam and PlayStation Network
+- Wishlist management with multi-platform support
+- Game search and exploration through IGDB database
+- Dashboard with detailed user statistics
+- Real-time game metadata updates
 
-## Installazione e Avvio
+## Installation and Setup
 
-### Prerequisiti
+### Prerequisites
 
-- Docker e Docker Compose
-- Account IGDB per API key
+- Docker and Docker Compose
+- IGDB account for API key
 
-### 1. Configura le credenziali IGDB
+### 1. Configure IGDB credentials
 
-Crea un file `.env` nella root del progetto:
+Create a `.env` file in the project root:
 
 ```bash
 # .env
@@ -27,50 +27,50 @@ IGDB_CLIENT_ID="your_igdb_client_id_here"
 IGDB_CLIENT_SECRET="your_igdb_client_secret_here"
 ```
 
-Per ottenere le credenziali:
-1. Vai su [IGDB API](https://api.igdb.com/)
-2. Registrati con account Twitch
-3. Crea nuova applicazione
-4. Copia Client ID e Client Secret
+To obtain the credentials:
+1. Go to [IGDB API](https://api.igdb.com/)
+2. Register with Twitch account
+3. Create new application
+4. Copy Client ID and Client Secret
 
-### 2. Avvia l'applicazione
+### 2. Start the application
 
 ```bash
-# Avvia tutti i servizi
+# Start all services
 docker-compose up -d
 
-# Ferma tutti i servizi
+# Stop all services
 docker-compose down
 ```
 
-### 3. Accedi all'applicazione
+### 3. Access the application
 
 - **Frontend**: http://localhost:3000
-- **Documentazione API**: http://localhost:8000/docs
+- **API Documentation**: http://localhost:8000/docs
 
-#### 4. Sincronizzazione
-1. Creare un utente
-2. Procedere alla sezione di update del profilo
-3. Compilare le credenziali per steam e psn
-    - **Steam**: Inserire le credenziali Steam
-        - Vai su [Steam API Key](https://steamcommunity.com/dev/apikey)
-        - Genera una nuova chiave
-        - Inserisci la chiave generata ed il proprio SteamID
-   - **PSN**: Inserire credenziali PlayStation
-     - Username PSN
+#### 4. Synchronization
+1. Create a user
+2. Go to the profile update section
+3. Fill in credentials for Steam and PSN
+    - **Steam**: Enter Steam credentials
+        - Go to [Steam API Key](https://steamcommunity.com/dev/apikey)
+        - Generate a new key
+        - Insert the generated key and your SteamID
+   - **PSN**: Enter PlayStation credentials
+     - PSN Username
      - NPSSO
-       - Per recuperare il proprio NPSSO:
-         1. Login nel tuo account [My PlayStation](https://my.playstation.com).
-         2. In un'altra scheda, vai su [https://ca.account.sony.com/api/v1/ssocookie](https://ca.account.sony.com/api/v1/ssocookie).
-         3. Se sei loggato, vedrai un testo simile a questo:
+       - To retrieve your NPSSO:
+         1. Login to your [My PlayStation](https://my.playstation.com) account.
+         2. In another tab, go to [https://ca.account.sony.com/api/v1/ssocookie](https://ca.account.sony.com/api/v1/ssocookie).
+         3. If you are logged in, you will see text similar to this:
             ```json
             {"npsso":"<64 character npsso code>"}
             ```
-4. Avviare la sincronizzazione dalla dashboard
+4. Start synchronization from the dashboard
 
-## Tecnologie
+## Technologies
 
 - **Frontend**: React, Tailwind CSS
 - **Backend**: FastAPI, Python
 - **Database**: MongoDB, Redis
-- **Infrastructure**: Docker,
+- **Infrastructure**: Docker
