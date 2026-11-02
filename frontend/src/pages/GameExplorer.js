@@ -18,10 +18,13 @@ import {
   ModalBody,
   ModalFooter,
 } from '@windmill/react-ui'
-import { HeartIcon, GamesIcon, SearchIcon, FilterIcon, RefreshIcon } from '../icons'
-import { getAllGames, getGenres, getCompanies, getGameModes, getConsoles, addGameToWishlist, addGameToLibrary, getLibraryConsolesForGame, getWishlistConsolesForGame, updateGameMetadata, searchIGDBGames, getConsoleNames } from '../services/api'
+import { HeartIcon, GamesIcon, SearchIcon, RefreshIcon } from '../icons'
+import { getAllGames, getGenres, getCompanies, getGameModes, getConsoles, updateGameMetadata, searchIGDBGames, getConsoleNames } from '../services/api'
+import { useToast } from '../context/ToastContext'
+import GameNameLink from '../components/GameNameLink'
 
 function GameExplorer() {
+  const { notify } = useToast()
   // Stati per i filtri
   const [filters, setFilters] = useState({
     name: '',
@@ -38,9 +41,7 @@ function GameExplorer() {
   const [totalResults, setTotalResults] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
-  const [wishlistLoading, setWishlistLoading] = useState({})
-  const [libraryLoading, setLibraryLoading] = useState({})
-  
+
   // Stati per i dati di riferimento
   const [genres, setGenres] = useState([])
   const [companies, setCompanies] = useState([])
@@ -53,19 +54,7 @@ function GameExplorer() {
   
   // Stati per la modal dei filtri
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
-  
-  // Stati per la modal delle immagini
-  const [isImageModalOpen, setIsImageModalOpen] = useState(false)
-  const [selectedGameImages, setSelectedGameImages] = useState([])
-  const [currentImageIndex, setCurrentImageIndex] = useState(0)
-  
-  // Stati per la modal di selezione console
-  const [isConsoleModalOpen, setIsConsoleModalOpen] = useState(false)
-  const [selectedGame, setSelectedGame] = useState(null)
-  const [selectedAction, setSelectedAction] = useState('') // 'wishlist' o 'library'
-  const [selectedConsole, setSelectedConsole] = useState(null)
-  const [alreadyAddedConsoles, setAlreadyAddedConsoles] = useState([])
-  
+
   // Stati per la modal di aggiornamento metadati
   const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false)
   const [selectedGameForMetadata, setSelectedGameForMetadata] = useState(null)
@@ -134,22 +123,6 @@ function GameExplorer() {
     }
   }
 
-  // Funzione per ottenere il nome della console (versione sincrona per il rendering)
-  const getConsoleNameSync = (consoleCode) => {
-    // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
-    if (typeof consoleCode === 'string') {
-      return consoleCode
-    }
-    
-    // Se è un numero (ID console), controlla la cache
-    if (consoleNamesCache[consoleCode]) {
-      return consoleNamesCache[consoleCode]
-    }
-    
-    // Se non è in cache, restituisci un placeholder
-    return `Console ${consoleCode}`
-  }
-
   // Funzione per cercare i giochi
   const searchGames = async () => {
     setIsLoading(true)
@@ -204,6 +177,7 @@ function GameExplorer() {
     }, 500) // Debounce della ricerca
 
     return () => clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, sortBy, sortOrder, page])
 
   // Gestione cambio pagina
@@ -231,112 +205,6 @@ function GameExplorer() {
     setPage(1)
   }
 
-  // Funzione per aprire la modal di selezione console
-  const openConsoleModal = async (game, action) => {
-    setSelectedGame(game)
-    setSelectedAction(action)
-    setSelectedConsole(null)
-    setIsConsoleModalOpen(true)
-    
-    // Carica le console già aggiunte per questo gioco
-    try {
-      if (action === 'library') {
-        const libraryData = await getLibraryConsolesForGame(game.igdb_id || game._id)
-        setAlreadyAddedConsoles(libraryData.consoles || [])
-      } else if (action === 'wishlist') {
-        const wishlistData = await getWishlistConsolesForGame(game.igdb_id || game._id)
-        setAlreadyAddedConsoles(wishlistData.consoles || [])
-      }
-    } catch (err) {
-      console.error('Error loading already added consoles:', err)
-      setAlreadyAddedConsoles([])
-    }
-  }
-
-  // Funzione per chiudere la modal
-  const closeConsoleModal = () => {
-    setIsConsoleModalOpen(false)
-    setSelectedGame(null)
-    setSelectedAction('')
-    setSelectedConsole(null)
-  }
-
-  // Funzione per confermare l'aggiunta del gioco
-  const confirmAddGame = async () => {
-    if (!selectedGame || !selectedConsole) return
-
-    try {
-      if (selectedAction === 'wishlist') {
-        setWishlistLoading(prev => ({ ...prev, [selectedGame._id]: true }))
-        await addGameToWishlist(selectedGame.igdb_id || selectedGame._id, selectedConsole)
-        alert(`${selectedGame.name} aggiunto alla wishlist per ${getConsoleName(selectedConsole)}!`)
-      } else if (selectedAction === 'library') {
-        setLibraryLoading(prev => ({ ...prev, [selectedGame._id]: true }))
-        await addGameToLibrary(selectedGame.igdb_id || selectedGame._id, selectedConsole)
-        alert(`${selectedGame.name} aggiunto alla libreria per ${getConsoleName(selectedConsole)}!`)
-      }
-      closeConsoleModal()
-    } catch (err) {
-      console.error(`Error adding to ${selectedAction}:`, err)
-      alert(err.message || `Errore nell'aggiunta alla ${selectedAction}`)
-    } finally {
-      if (selectedAction === 'wishlist') {
-        setWishlistLoading(prev => ({ ...prev, [selectedGame._id]: false }))
-      } else if (selectedAction === 'library') {
-        setLibraryLoading(prev => ({ ...prev, [selectedGame._id]: false }))
-      }
-    }
-  }
-
-  // Funzione per ottenere il nome della console
-  const getConsoleName = (consoleId) => {
-    // Se consoleId è già una stringa (nome console), restituiscilo direttamente
-    if (typeof consoleId === 'string') {
-      return consoleId
-    }
-    
-    // Se è un numero (ID console), controlla la cache
-    if (consoleNamesCache[consoleId]) {
-      return consoleNamesCache[consoleId]
-    }
-    
-    // Se non è in cache, restituisci un placeholder
-    return `Console ${consoleId}`
-  }
-
-  // Funzione per ottenere le console disponibili per un gioco
-  const getAvailableConsoles = (game) => {
-    if (!game || !game.platforms || game.platforms.length === 0) {
-      return []
-    }
-
-    const availableConsoles = []
-    for (const platform of game.platforms) {
-      if (typeof platform === 'object' && platform.id) {
-        availableConsoles.push({
-          id: platform.id,
-          name: platform.name || platform.abbreviation || getConsoleName(platform.id)
-        })
-      } else if (typeof platform === 'number') {
-        availableConsoles.push({
-          id: platform,
-          name: getConsoleName(platform)
-        })
-      }
-    }
-    return availableConsoles
-  }
-
-  // Funzione per aggiungere un gioco alla wishlist (ora apre la modal)
-  const handleAddToWishlist = async (game) => {
-    openConsoleModal(game, 'wishlist')
-  }
-
-  // Funzione per aggiungere un gioco alla libreria (ora apre la modal)
-  const handleAddToLibrary = async (game) => {
-    openConsoleModal(game, 'library')
-  }
-
   // Reset filtri
   const resetFilters = () => {
     setFilters({
@@ -350,60 +218,6 @@ function GameExplorer() {
     setSortBy('name')
     setSortOrder('asc')
     setPage(1)
-  }
-
-  // Funzione per aprire la modal delle immagini
-  const openImageModal = (game) => {
-    const images = []
-    
-    // Aggiungi l'immagine di copertina se disponibile
-    if (game.cover_image) {
-      images.push({ url: game.cover_image, type: 'Copertina' })
-    }
-    
-    // Aggiungi gli screenshots se disponibili
-    if (game.screenshots) {
-      const screenshotUrls = game.screenshots.split(',').filter(url => url.trim())
-      screenshotUrls.forEach(url => {
-        images.push({ url: url.trim(), type: 'Screenshot' })
-      })
-    }
-    
-    // Aggiungi gli artworks se disponibili
-    if (game.artworks) {
-      const artworkUrls = game.artworks.split(',').filter(url => url.trim())
-      artworkUrls.forEach(url => {
-        images.push({ url: url.trim(), type: 'Artwork' })
-      })
-    }
-    
-    if (images.length > 0) {
-      setSelectedGameImages(images)
-      setCurrentImageIndex(0)
-      setIsImageModalOpen(true)
-    } else {
-      alert('Nessuna immagine disponibile per questo gioco')
-    }
-  }
-
-  // Funzione per chiudere la modal delle immagini
-  const closeImageModal = () => {
-    setIsImageModalOpen(false)
-    setSelectedGameImages([])
-    setCurrentImageIndex(0)
-  }
-
-  // Funzione per navigare tra le immagini
-  const nextImage = () => {
-    setCurrentImageIndex((prev) => 
-      prev === selectedGameImages.length - 1 ? 0 : prev + 1
-    )
-  }
-
-  const prevImage = () => {
-    setCurrentImageIndex((prev) => 
-      prev === 0 ? selectedGameImages.length - 1 : prev - 1
-    )
   }
 
   // Funzione per aprire la modal di aggiornamento metadati
@@ -454,20 +268,19 @@ function GameExplorer() {
         throw new Error('ID IGDB non valido');
       }
 
-      console.log('ID IGDB da utilizzare:', igdbId);
 
       await updateGameMetadata(selectedGameForMetadata._id, igdbId);
       await searchGames(); // Ricarica la lista dei giochi
       setIsMetadataModalOpen(false); // Chiude la modal
-      alert('Metadati aggiornati con successo!');
+      notify('Metadati aggiornati con successo', 'success');
     } catch (error) {
       console.error('Errore nell\'aggiornamento metadati:', error);
-      
+
       // Gestione specifica per l'errore di chiave duplicata
       if (error.message && error.message.includes('E11000 duplicate key error')) {
-        alert('Gioco già presente, scegline un altro');
+        notify('Gioco già presente, scegline un altro', 'error');
       } else {
-        alert(error.message || 'Errore durante l\'aggiornamento dei metadati');
+        notify(error.message || 'Errore durante l\'aggiornamento dei metadati', 'error');
       }
     }
   };
@@ -536,7 +349,7 @@ function GameExplorer() {
       <TableContainer className="mb-8">
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <p className="text-sm text-blue-700 dark:text-blue-300">
-            <strong>💡 Suggerimento:</strong> Usa il pulsante <GamesIcon className="w-4 h-4 inline text-blue-500" /> per aggiungere alla libreria (giochi che possiedi) 
+            <strong>Suggerimento:</strong> Usa il pulsante <GamesIcon className="w-4 h-4 inline text-blue-500" /> per aggiungere alla libreria (giochi che possiedi) 
             e il pulsante <HeartIcon className="w-4 h-4 inline text-red-500" /> per aggiungere alla wishlist (giochi che desideri).
           </p>
         </div>
@@ -626,7 +439,7 @@ function GameExplorer() {
                     />
 
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold truncate">{game.name}</p>
+                      <GameNameLink name={game.name} gameId={game.igdb_id} className="truncate block" />
                       {game.original_name && game.original_name !== game.name && (
                         <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                           {game.original_name}
@@ -877,145 +690,6 @@ function GameExplorer() {
         </ModalFooter>
       </Modal>
 
-      {/* Modal Immagini */}
-      <Modal isOpen={isImageModalOpen} onClose={closeImageModal} size="large">
-        <ModalHeader>
-          <div className="flex items-center justify-between">
-            <span>Immagini del Gioco</span>
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-gray-500">
-                {currentImageIndex + 1} di {selectedGameImages.length}
-              </span>
-            </div>
-          </div>
-        </ModalHeader>
-        <ModalBody>
-          {selectedGameImages.length > 0 && (
-            <div className="relative">
-              <div className="flex justify-center mb-4">
-                {/* <img
-                  src={selectedGameImages[currentImageIndex].url}
-                  alt={`${selectedGameImages[currentImageIndex].type} ${currentImageIndex + 1}`}
-                  className="max-w-full max-h-96 object-contain rounded"
-                  onError={(e) => {
-                    e.target.src = 'placeholder-image-url.jpg'
-                  }}
-                /> */}
-                <img
-                  src={selectedGameImages[currentImageIndex].url}
-                  alt={`${selectedGameImages[currentImageIndex].type} ${currentImageIndex + 1}`}
-                  className="max-w-full max-h-96 object-contain rounded"
-                  onError={(e) => {
-                    e.target.onerror = null
-                    e.target.src = '/default_cover.png'
-                  }}
-                />
-              </div>
-              <div className="text-center mb-4">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {selectedGameImages[currentImageIndex].type}
-                </span>
-              </div>
-              {selectedGameImages.length > 1 && (
-                <div className="flex justify-center space-x-2">
-                  <Button
-                    layout="outline"
-                    size="small"
-                    onClick={prevImage}
-                  >
-                    ← Precedente
-                  </Button>
-                  <Button
-                    layout="outline"
-                    size="small"
-                    onClick={nextImage}
-                  >
-                    Successiva →
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-        </ModalBody>
-        <ModalFooter>
-          <Button layout="outline" onClick={closeImageModal}>
-            Chiudi
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Modal per la selezione della console */}
-      <Modal isOpen={isConsoleModalOpen} onClose={closeConsoleModal}>
-        <ModalHeader>
-          Seleziona Console per {selectedGame?.name}
-        </ModalHeader>
-        <ModalBody>
-          {selectedGame ? (
-            <div>
-              <p className="mb-4 text-gray-600 dark:text-gray-400">
-                Seleziona la console per cui vuoi aggiungere questo gioco alla {selectedAction === 'wishlist' ? 'wishlist' : 'libreria'}:
-              </p>
-              
-              <div className="space-y-2">
-                {getAvailableConsoles(selectedGame).map((console) => {
-                  const isAlreadyAdded = alreadyAddedConsoles.includes(console.id)
-                  return (
-                    <label 
-                      key={console.id} 
-                      className={`flex items-center p-3 border rounded-lg cursor-pointer ${
-                        isAlreadyAdded 
-                          ? 'bg-gray-100 dark:bg-gray-700 opacity-50 cursor-not-allowed' 
-                          : 'hover:bg-gray-50 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="console"
-                        value={console.id}
-                        checked={selectedConsole === console.id}
-                        onChange={(e) => setSelectedConsole(parseInt(e.target.value))}
-                        disabled={isAlreadyAdded}
-                        className="mr-3"
-                      />
-                      <span className="text-sm font-medium">
-                        {console.name}
-                        {isAlreadyAdded && (
-                          <span className="ml-2 text-xs text-green-600 dark:text-green-400">
-                            ✓ Già aggiunto
-                          </span>
-                        )}
-                      </span>
-                    </label>
-                  )
-                })}
-              </div>
-              
-              {getAvailableConsoles(selectedGame).length === 0 && (
-                <p className="text-yellow-400 text-sm">
-                  Nessuna console disponibile per questo gioco.
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="text-gray-600 dark:text-gray-400">
-              Caricamento informazioni gioco...
-            </p>
-          )}
-        </ModalBody>
-        <ModalFooter>
-          <Button layout="outline" onClick={closeConsoleModal}>
-            Annulla
-          </Button>
-          <Button 
-            onClick={confirmAddGame}
-            disabled={!selectedConsole || getAvailableConsoles(selectedGame).length === 0 || alreadyAddedConsoles.includes(selectedConsole)}
-          >
-            {selectedAction === 'wishlist' ? 'Aggiungi alla Wishlist' : 'Aggiungi alla Libreria'}
-          </Button>
-        </ModalFooter>
-      </Modal>
-
-      {/* Modal per l'aggiornamento dei metadati */}
       <Modal isOpen={isMetadataModalOpen} onClose={() => setIsMetadataModalOpen(false)}>
         <ModalHeader>
           Aggiorna Metadati - {selectedGameForMetadata?.name}

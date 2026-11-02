@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { getUserWishlist, removeGameFromWishlist, getConsoleNames } from '../services/api';
-import { Card, CardBody, Button, Badge } from '@windmill/react-ui';
+import { getUserWishlist, removeGameFromWishlist, getConsoleNames, getWishlistPrices, setWishlistPriceTracking } from '../services/api';
+import { Card, CardBody, Button, Badge, Modal, ModalHeader, ModalBody, ModalFooter, Input, Label, Pagination, HelperText } from '@windmill/react-ui';
 import { TrashIcon, HeartIcon, StarIcon, PlayIcon } from '../icons';
-import ThemedSuspense from '../components/ThemedSuspense';
-import { Modal, ModalHeader, ModalBody, ModalFooter } from '@windmill/react-ui';
+import { CardSkeletonGrid } from '../components/Skeletons';
+import Sparkline from '../components/Sparkline';
+import GameNameLink from '../components/GameNameLink';
+import { useToast } from '../context/ToastContext';
 
 
 const Wishlist = () => {
+    const { notify } = useToast();
     const [wishlist, setWishlist] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -22,16 +25,11 @@ const Wishlist = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [gameToDelete, setGameToDelete] = useState(null);
     const [consoleNamesCache, setConsoleNamesCache] = useState({});
+    // Dati prezzi per item (game_id -> {latest_by_store, price_tracking, ...})
+    const [pricesData, setPricesData] = useState({});
     // Nuovi stati per la selezione console
     const [selectedConsoleToRemove, setSelectedConsoleToRemove] = useState(null);
     const [showConsoleSelectionModal, setShowConsoleSelectionModal] = useState(false);
-
-    const platforms = [
-        { value: '', label: 'Tutte le piattaforme' },
-        { value: 'steam', label: 'Steam' },
-        { value: 'psn', label: 'PlayStation Network' },
-        { value: 'manual', label: 'Manuale' }
-    ];
 
     const sortOptions = [
         { value: 'name', label: 'Nome' },
@@ -96,6 +94,7 @@ const Wishlist = () => {
         } else {
             setFilteredWishlist([]);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wishlist, searchTerm, selectedConsole, sortBy, sortOrder]);
 
     // Funzione per caricare i nomi delle console
@@ -152,6 +151,7 @@ const Wishlist = () => {
         if (consoles.length > 0) {
             loadConsoleNames(wishlist);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [wishlist]);
 
     const fetchWishlist = async () => {
@@ -187,10 +187,66 @@ const Wishlist = () => {
         }
     };
 
+    // Carica i dati prezzi per gli item in wishlist
+    const fetchPrices = async (wishlistArray) => {
+        try {
+            const data = await getWishlistPrices();
+            const byGame = {};
+            (data.items || []).forEach(item => {
+                byGame[item.game_id] = item;
+            });
+            setPricesData(byGame);
+        } catch (err) {
+            console.error('Error loading wishlist prices:', err);
+        }
+    };
+
     // Effettua il fetch quando cambiano i parametri di paginazione o filtri
     useEffect(() => {
         fetchWishlist();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentPage, selectedConsole, sortBy, sortOrder]);
+
+    // Dopo ogni caricamento della wishlist, carica i dati prezzi
+    useEffect(() => {
+        if (wishlist.length > 0) {
+            fetchPrices();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [wishlist]);
+
+    // Configurazione tracking prezzi
+    const [trackingModalGame, setTrackingModalGame] = useState(null);
+    const [trackingForm, setTrackingForm] = useState({ trovaprezzi_url: '', stores: '', alert_below: '' });
+    const [trackingSaving, setTrackingSaving] = useState(false);
+
+    const openTrackingModal = (gameId) => {
+        const existing = pricesData[gameId]?.price_tracking || {};
+        setTrackingForm({
+            trovaprezzi_url: existing.trovaprezzi_url || '',
+            stores: (existing.stores || []).join(', '),
+            alert_below: existing.alert_below ?? ''
+        });
+        setTrackingModalGame(gameId);
+    };
+
+    const saveTrackingConfig = async () => {
+        try {
+            setTrackingSaving(true);
+            await setWishlistPriceTracking(trackingModalGame, {
+                trovaprezzi_url: trackingForm.trovaprezzi_url || null,
+                stores: trackingForm.stores ? trackingForm.stores.split(',').map(s => s.trim()).filter(Boolean) : [],
+                alert_below: trackingForm.alert_below || null
+            });
+            setTrackingModalGame(null);
+            notify('Configurazione tracking prezzi salvata', 'success');
+            fetchWishlist();
+        } catch (err) {
+            notify(err.message || 'Errore nel salvataggio del tracking', 'error');
+        } finally {
+            setTrackingSaving(false);
+        }
+    };
 
     const handleDeleteGame = async () => {
         if (!gameToDelete) return;
@@ -304,36 +360,6 @@ const Wishlist = () => {
         setShowDeleteModal(true);
     };
 
-    const getPlatformIcon = (platform) => {
-        if (!platform) return '🎲';
-        
-        switch (platform.toLowerCase()) {
-            case 'steam':
-                return '🎮';
-            case 'psn':
-                return '🎯';
-            case 'manual':
-                return '✏️';
-            default:
-                return '🎲';
-        }
-    };
-
-    const getPlatformType = (platform) => {
-        if (!platform) return 'default';
-        
-        switch (platform.toLowerCase()) {
-            case 'steam':
-                return 'success';
-            case 'psn':
-                return 'warning';
-            case 'manual':
-                return 'info';
-            default:
-                return 'default';
-        }
-    };
-
     const getConsoleName = (consoleCode) => {
         // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
         if (typeof consoleCode === 'string') {
@@ -354,11 +380,6 @@ const Wishlist = () => {
         return new Date(dateString).toLocaleDateString('it-IT');
     };
 
-    const formatRating = (rating) => {
-        if (!rating) return 'N/A';
-        return `${rating}/100`;
-    };
-
     // Modifica la funzione che gestisce il cambio del campo di ordinamento
     const handleSortChange = (newSortBy) => {
         if (newSortBy === sortBy) {
@@ -376,7 +397,15 @@ const Wishlist = () => {
     };
 
     if (loading) {
-        return <ThemedSuspense />;
+        return (
+            <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+                <div className="container mx-auto px-6 py-8">
+                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">La Mia Wishlist</h1>
+                    <p className="text-gray-600 dark:text-gray-400 mb-8">Gestisci i giochi che desideri acquistare</p>
+                    <CardSkeletonGrid count={6} />
+                </div>
+            </div>
+        );
     }
 
     return (
@@ -534,7 +563,8 @@ const Wishlist = () => {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {filteredWishlist.map((wishlistItem) => {
-                            const coverUrl = wishlistItem.cover_image ? `https:${wishlistItem.cover_image}` : null;
+                            // Copertina in alta risoluzione per il box grande della card
+                            const coverUrl = wishlistItem.cover_image ? `https:${wishlistItem.cover_image.replace('t_thumb', 't_cover_big')}` : null;
                             
                             return (
                                 <Card key={wishlistItem._id} className="hover:shadow-lg transition-shadow duration-200">
@@ -542,9 +572,16 @@ const Wishlist = () => {
                                         <div className="flex justify-between items-start">
                                             <div className="w-full text-center">
                                                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-                                                    {wishlistItem.name}
+                                                    <GameNameLink name={wishlistItem.name} gameId={wishlistItem.game_id} />
                                                 </h3>
                                             </div>
+                                            <Button
+                                                onClick={() => openTrackingModal(wishlistItem.game_id)}
+                                                size="small"
+                                                className="ml-2"
+                                            >
+                                                Prezzi
+                                            </Button>
                                             <Button
                                                 onClick={() => confirmDelete(wishlistItem)}
                                                 disabled={deleteLoading === (wishlistItem.wishlist_id || wishlistItem._id)}
@@ -620,6 +657,35 @@ const Wishlist = () => {
                                                     </span>
                                                 </div>
                                             )}
+
+                                            {/* Prezzi per negozio */}
+                                            {pricesData[wishlistItem.game_id] && Object.keys(pricesData[wishlistItem.game_id].latest_by_store || {}).length > 0 && (
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <div className="flex flex-wrap items-center justify-center gap-1">
+                                                        {Object.entries(pricesData[wishlistItem.game_id].latest_by_store).map(([store, price]) => (
+                                                            <Badge key={store} type="neutral">
+                                                                {store}: {price} €
+                                                            </Badge>
+                                                        ))}
+                                                        {wishlistItem.alert_triggered && (
+                                                            <Badge type="danger">Alert prezzo!</Badge>
+                                                        )}
+                                                    </div>
+                                                    {/* Andamento prezzi nel tempo (dal primo snapshot) */}
+                                                    {(() => {
+                                                        const history = pricesData[wishlistItem.game_id].history || [];
+                                                        const series = history.map(h => h.price).filter(p => p !== null && p !== undefined);
+                                                        return series.length >= 2 ? (
+                                                            <div className="text-center">
+                                                                <Sparkline values={series} />
+                                                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                                    Andamento prezzo ({series.length} rilievi)
+                                                                </p>
+                                                            </div>
+                                                        ) : null;
+                                                    })()}
+                                                </div>
+                                            )}
                                         </div>
                                     </CardBody>
                                 </Card>
@@ -628,33 +694,73 @@ const Wishlist = () => {
                     </div>
                 )}
 
-                {/* Pagination */}
+                {/* Pagination (stesso componente della libreria) */}
                 {totalPages > 1 && (
                     <div className="mt-8 flex justify-center">
-                        <nav className="flex items-center space-x-2">
-                            <Button
-                                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                                disabled={currentPage === 1}
-                                size="small"
-                            >
-                                Precedente
-                            </Button>
-                            
-                            <span className="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">
-                                Pagina {currentPage} di {totalPages}
-                            </span>
-                            
-                            <Button
-                                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                                disabled={currentPage === totalPages}
-                                size="small"
-                            >
-                                Successiva
-                            </Button>
-                        </nav>
+                        <Pagination
+                            totalResults={totalGames}
+                            resultsPerPage={20}
+                            onChange={(p) => setCurrentPage(p)}
+                            label="Wishlist navigation"
+                        />
                     </div>
                 )}
             </div>
+
+            {/* Price Tracking Modal */}
+            {trackingModalGame && (
+                <Modal isOpen={!!trackingModalGame} onClose={() => setTrackingModalGame(null)}>
+                    <ModalHeader className="text-center">
+                        Configura tracking prezzi
+                    </ModalHeader>
+                    <ModalBody>
+                        <Label className="mt-2">
+                            <span>Feed RSS Trovaprezzi (negozi fisici)</span>
+                            <Input
+                                className="mt-1"
+                                placeholder="https://www.trovaprezzi.it/rss/prezzo.aspx?id=..."
+                                value={trackingForm.trovaprezzi_url}
+                                onChange={(e) => setTrackingForm({ ...trackingForm, trovaprezzi_url: e.target.value })}
+                            />
+                        </Label>
+                        <Label className="mt-4">
+                            <span>Negozi di interesse (separati da virgola, opzionale)</span>
+                            <Input
+                                className="mt-1"
+                                placeholder="Unieuro, GameLife, Mediaworld"
+                                value={trackingForm.stores}
+                                onChange={(e) => setTrackingForm({ ...trackingForm, stores: e.target.value })}
+                            />
+                            <HelperText valid={true}>
+                                Vuoto: viene usata la lista globale dei negozi configurata in Servizi
+                            </HelperText>
+                        </Label>
+                        <Label className="mt-4">
+                            <span>Alert quando il prezzo scende sotto (€, opzionale)</span>
+                            <Input
+                                className="mt-1"
+                                type="number"
+                                step="0.01"
+                                placeholder="29.99"
+                                value={trackingForm.alert_below}
+                                onChange={(e) => setTrackingForm({ ...trackingForm, alert_below: e.target.value })}
+                            />
+                        </Label>
+                    </ModalBody>
+                    <ModalFooter>
+                        <div className="hidden sm:block">
+                            <Button layout="outline" onClick={() => setTrackingModalGame(null)}>
+                                Annulla
+                            </Button>
+                        </div>
+                        <div className="hidden sm:block">
+                            <Button onClick={saveTrackingConfig} disabled={trackingSaving}>
+                                {trackingSaving ? 'Salvataggio...' : 'Salva'}
+                            </Button>
+                        </div>
+                    </ModalFooter>
+                </Modal>
+            )}
 
             {/* Console Selection Modal */}
             {showConsoleSelectionModal && (
@@ -705,16 +811,29 @@ const Wishlist = () => {
                     </ModalHeader>
                     <ModalBody>
                         {gameToDelete && (
-                            <p className="text-center">
-                                {selectedConsoleToRemove ? 
-                                    `Sei sicuro di voler rimuovere "${gameToDelete.name}" dalla wishlist per ${getConsoleName(selectedConsoleToRemove)}?` :
-                                    `Sei sicuro di voler rimuovere "${gameToDelete.name}" dalla tua wishlist?`
-                                }
-                                <br />
-                                <span className="text-sm text-gray-500 dark:text-gray-400 mt-2 block">
-                                    Questa azione non può essere annullata.
-                                </span>
-                            </p>
+                            <div className="text-center">
+                                {gameToDelete.cover_image && (
+                                    <img
+                                        className="w-20 h-20 object-cover rounded-lg mx-auto mb-3 bg-gray-100 dark:bg-gray-700"
+                                        src={`https:${gameToDelete.cover_image}`}
+                                        alt={gameToDelete.name}
+                                        onError={(e) => {
+                                            e.target.style.display = 'none'
+                                        }}
+                                    />
+                                )}
+                                <p className="font-semibold text-lg mb-2">{gameToDelete.name}</p>
+                                <p className="text-sm">
+                                    {selectedConsoleToRemove ?
+                                        `Verrà rimosso dalla wishlist per ${getConsoleName(selectedConsoleToRemove)}.` :
+                                        'Verrà rimosso dalla tua wishlist.'
+                                    }
+                                    <br />
+                                    <span className="text-sm text-gray-500 dark:text-gray-400 mt-2 block">
+                                        Questa azione non può essere annullata.
+                                    </span>
+                                </p>
+                            </div>
                         )}
                     </ModalBody>
                     <ModalFooter className="flex justify-center">

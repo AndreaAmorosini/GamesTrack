@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useHistory } from 'react-router-dom'
-import ImageLight from '../assets/img/login-office.jpeg'
-import ImageDark from '../assets/img/login-office-dark.jpeg'
-import { GithubIcon, TwitterIcon } from '../icons'
+import ImageLight from '../assets/img/login-gaming.svg'
+import ImageDark from '../assets/img/login-gaming-dark.svg'
 import { Label, Input, Button, HelperText } from '@windmill/react-ui'
 import { login, getUserProfile, isAuthenticated } from '../services/api'
 
@@ -33,12 +32,10 @@ function Login() {
     try {
       // Prima effettuiamo il login
       const loginData = await login(username, password)
-      console.log('Login successful:', loginData)
       
       try {
         // Se il login ha successo, proviamo a ottenere i dati dell'utente
         const userData = await getUserProfile()
-        console.log('User data retrieved:', userData)
         localStorage.setItem('user', JSON.stringify(userData))
       } catch (userError) {
         // Se fallisce il recupero dei dati utente, logghiamo l'errore ma procediamo
@@ -127,15 +124,6 @@ function Login() {
               </form>
 
               <hr className="my-8" />
-
-              <Button block layout="outline">
-                <GithubIcon className="w-4 h-4 mr-2" aria-hidden="true" />
-                Github
-              </Button>
-              <Button className="mt-4" block layout="outline">
-                <TwitterIcon className="w-4 h-4 mr-2" aria-hidden="true" />
-                Twitter
-              </Button>
 
               <p className="mt-4">
                 <Link

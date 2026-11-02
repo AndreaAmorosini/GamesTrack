@@ -6,11 +6,9 @@ import {
   TableCell,
   TableBody,
   TableRow,
-  TableFooter,
   TableContainer,
   Badge,
   Button,
-  Pagination,
   Input,
   Select,
   Modal,
@@ -19,26 +17,30 @@ import {
   ModalFooter,
 } from '@windmill/react-ui'
 import { HeartIcon, GamesIcon } from '../icons'
-import { searchIGDBGames, addGameToWishlist, addGameToLibrary, getPlatformMapping, getLibraryConsolesForGame, getWishlistConsolesForGame, getConsoleNames } from '../services/api'
+import GameNameLink from '../components/GameNameLink'
+import { searchIGDBGames, addGameToWishlist, addGameToLibrary, getLibraryConsolesForGame, getWishlistConsolesForGame, getConsoleNames } from '../services/api'
+import { useToast } from '../context/ToastContext'
 
 function GameSearch() {
+  const { notify } = useToast()
   // Stati per la ricerca
   const [searchTerm, setSearchTerm] = useState('')
-  const [platform, setPlatform] = useState('')
-  const [company, setCompany] = useState('')
+  const [platform] = useState('')
+  const [company] = useState('')
   const [selectedGenre, setSelectedGenre] = useState('')
   const [selectedConsole, setSelectedConsole] = useState('')
   
   // Stati per i risultati
   const [games, setGames] = useState([])
   const [page, setPage] = useState(1)
-  const [totalResults, setTotalResults] = useState(0)
+  // IGDB non espone il totale: has_next (dalla risposta) pilota la paginazione
+  const [hasNext, setHasNext] = useState(false)
+  const [resultsPerPage, setResultsPerPage] = useState(10)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [wishlistLoading, setWishlistLoading] = useState({})
   const [libraryLoading, setLibraryLoading] = useState({})
-  const [platformMapping, setPlatformMapping] = useState({})
-  
+
   // Stati per l'ordinamento
   const [sortField, setSortField] = useState('')
   const [sortDirection, setSortDirection] = useState('asc')
@@ -52,22 +54,6 @@ function GameSearch() {
   
   // Cache per i nomi delle console
   const [consoleNamesCache, setConsoleNamesCache] = useState({})
-  
-  const resultsPerPage = 10
-
-  // Carica il mapping delle piattaforme all'avvio
-  useEffect(() => {
-    const loadPlatformMapping = async () => {
-      try {
-        const data = await getPlatformMapping()
-        setPlatformMapping(data.mapping || {})
-      } catch (err) {
-        console.error('Error loading platform mapping:', err)
-      }
-    }
-    
-    loadPlatformMapping()
-  }, [])
 
   // Funzione per gestire l'ordinamento
   const handleSort = (field) => {
@@ -277,11 +263,12 @@ function GameSearch() {
         }
       });
       window.dispatchEvent(event);
-      
+
       closeConsoleModal()
+      notify(`${selectedGame.name} aggiunto con successo`, 'success')
     } catch (err) {
       console.error(`Error adding to ${selectedAction}:`, err)
-      alert(err.message || `Errore nell'aggiunta alla ${selectedAction}`)
+      notify(err.message || `Errore nell'aggiunta alla ${selectedAction}`, 'error')
     } finally {
       if (selectedAction === 'wishlist') {
         setWishlistLoading(prev => ({ ...prev, [selectedGame.igdb_id]: false }))
@@ -363,7 +350,7 @@ function GameSearch() {
         limit: resultsPerPage
       })
       setGames(data.games || [])
-      setTotalResults(data.pagination?.total_returned || 0)
+      setHasNext(!!data.pagination?.has_next)
       // Reset dei filtri quando si fa una nuova ricerca
       setSelectedGenre('')
       setSelectedConsole('')
@@ -386,6 +373,16 @@ function GameSearch() {
     setPage(p)
   }
 
+  // Nuova ricerca: riparte sempre dalla prima pagina
+  const runSearch = () => {
+    if (!searchTerm.trim()) return
+    if (page !== 1) {
+      setPage(1) // l'effect su [page] rifà la ricerca
+    } else {
+      performSearch()
+    }
+  }
+
   // Effettua la ricerca quando cambiano i parametri
   useEffect(() => {
     if (searchTerm.trim()) {
@@ -397,7 +394,8 @@ function GameSearch() {
       }
       performSearch()
     }
-  }, [page])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, resultsPerPage])
 
   // Filtra e ordina i giochi
   const filteredByGenre = filterGamesByGenre(games)
@@ -412,14 +410,14 @@ function GameSearch() {
 
       {/* Form di ricerca */}
       <div className="px-4 py-3 mb-8 bg-white rounded-lg shadow-md dark:bg-gray-800">
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-6">
           <div>
             <Input
               className="mt-1"
               placeholder="Cerca giochi..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && performSearch()}
+              onKeyPress={(e) => e.key === 'Enter' && runSearch()}
             />
           </div>
 
@@ -456,7 +454,22 @@ function GameSearch() {
           </div>
           
           <div>
-            <Button onClick={performSearch} disabled={isLoading}>
+            <Select
+              className="mt-1"
+              value={resultsPerPage}
+              onChange={(e) => {
+                setResultsPerPage(Number(e.target.value))
+                setPage(1)
+              }}
+            >
+              <option value={10}>10 per pagina</option>
+              <option value={25}>25 per pagina</option>
+              <option value={50}>50 per pagina</option>
+            </Select>
+          </div>
+
+          <div>
+            <Button onClick={runSearch} disabled={isLoading}>
               {isLoading ? 'Ricerca...' : 'Cerca'}
             </Button>
           </div>
@@ -471,18 +484,17 @@ function GameSearch() {
       <TableContainer className="mb-8">
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <p className="text-sm text-blue-700 dark:text-blue-300">
-            <strong>💡 Suggerimento:</strong> Usa il pulsante <GamesIcon className="w-4 h-4 inline text-blue-500" /> per aggiungere alla libreria (giochi che possiedi) 
+            <strong>Suggerimento:</strong> Usa il pulsante <GamesIcon className="w-4 h-4 inline text-blue-500" /> per aggiungere alla libreria (giochi che possiedi) 
             e il pulsante <HeartIcon className="w-4 h-4 inline text-red-500" /> per aggiungere alla wishlist (giochi che desideri).
           </p>
         </div>
         <Table>
           <TableHeader>
             <tr>
-              <TableCell>Gioco</TableCell>
-              <TableCell>Console</TableCell>
-              <TableCell>Generi</TableCell>
-              <TableCell>Sviluppatore</TableCell>
-              <TableCell>Publisher</TableCell>
+              <TableCell className="w-2/5 min-w-0">Gioco</TableCell>
+              <TableCell className="w-1/6">Console</TableCell>
+              <TableCell className="hidden md:table-cell w-1/6">Generi</TableCell>
+              <TableCell className="hidden lg:table-cell">Sviluppatore</TableCell>
               <TableCell>
                 <Button
                   layout="link"
@@ -493,65 +505,50 @@ function GameSearch() {
                   <span className="text-xs">{getSortIcon('release_date')}</span>
                 </Button>
               </TableCell>
-              <TableCell>
-                <Button
-                  layout="link"
-                  onClick={() => handleSort('total_rating')}
-                  className="flex items-center space-x-1 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
-                >
-                  <span>Valutazione</span>
-                  <span className="text-xs">{getSortIcon('total_rating')}</span>
-                </Button>
-              </TableCell>
               <TableCell>Azioni</TableCell>
             </tr>
           </TableHeader>
           <TableBody>
             {sortedGames.map((game, i) => (
               <TableRow key={i}>
-                <TableCell>
+                <TableCell className="w-2/5 min-w-0">
                   <div className="flex items-center text-sm">
                     {game.cover ? (
                       <img
-                        className="hidden w-12 h-12 mr-3 md:block object-cover rounded"
+                        className="hidden w-10 h-10 mr-3 md:block object-cover rounded flex-shrink-0"
                         src={getImageUrl(game.cover)}
                         alt={game.name}
                         onError={(e) => {
                           e.target.style.display = 'none'
-                          // Mostra un'icona di fallback
-                          const fallbackIcon = document.createElement('div')
-                          fallbackIcon.className = 'hidden w-12 h-12 mr-3 md:flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded'
-                          fallbackIcon.innerHTML = '<svg class="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd"></path></svg>'
-                          e.target.parentNode.insertBefore(fallbackIcon, e.target)
                         }}
                       />
                     ) : (
-                      <div className="hidden w-12 h-12 mr-3 md:flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded">
-                        <svg className="w-6 h-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+                      <div className="hidden w-10 h-10 mr-3 md:flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded flex-shrink-0">
+                        <svg className="w-5 h-5 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd"></path>
                         </svg>
                       </div>
                     )}
-                    <div>
-                      <p className="font-semibold">{game.name}</p>
-                      {game.summary && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          {game.summary.substring(0, 100)}...
-                        </p>
-                      )}
+                    <div className="min-w-0">
+                      <GameNameLink name={game.name} gameId={game.igdb_id} className="truncate block" />
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="w-1/6">
                   <div className="flex flex-wrap gap-1">
-                    {game.platforms?.map((platform, idx) => (
-                      <Badge key={idx} type="success">
-                        {platform.name || platform.abbreviation || getConsoleNameSync(platform.id)}
+                    {(game.platforms || []).slice(0, 4).map((platform, idx) => (
+                      <Badge key={idx} type="success" className="whitespace-nowrap">
+                        {platform.abbreviation || platform.name || getConsoleNameSync(platform.id)}
                       </Badge>
                     ))}
+                    {(game.platforms || []).length > 4 && (
+                      <Badge type="neutral" className="whitespace-nowrap">
+                        +{game.platforms.length - 4}
+                      </Badge>
+                    )}
                   </div>
                 </TableCell>
-                <TableCell>
+                <TableCell className="hidden md:table-cell">
                   <div className="flex flex-wrap gap-1">
                     {game.genres?.map((genre, idx) => (
                       <Badge key={idx} type="info">
@@ -560,24 +557,14 @@ function GameSearch() {
                     ))}
                   </div>
                 </TableCell>
-                <TableCell>
-                  <span className="text-sm">
+                <TableCell className="hidden lg:table-cell">
+                  <span className="text-sm truncate block max-w-xs">
                     {game.companies?.developers?.join(', ') || 'N/A'}
                   </span>
                 </TableCell>
                 <TableCell>
                   <span className="text-sm">
-                    {game.companies?.publishers?.join(', ') || 'N/A'}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <span className="text-sm">
                     {game.release_date ? new Date(game.release_date).toLocaleDateString() : 'TBA'}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <span className="text-sm">
-                    {game.total_rating ? `${Math.round(game.total_rating)}%` : 'N/A'}
                   </span>
                 </TableCell>
                 <TableCell>
@@ -619,14 +606,29 @@ function GameSearch() {
             ))}
           </TableBody>
         </Table>
-        <TableFooter>
-          <Pagination
-            totalResults={totalResults}
-            resultsPerPage={resultsPerPage}
-            onChange={onPageChange}
-            label="Table navigation"
-          />
-        </TableFooter>
+        {/* Paginazione: IGDB non espone il totale, quindi si naviga con has_next */}
+        <div className="flex items-center justify-between py-4">
+          <Button
+            layout="outline"
+            disabled={page <= 1 || isLoading}
+            onClick={() => onPageChange(page - 1)}
+            aria-label="Pagina precedente"
+          >
+            Precedente
+          </Button>
+          <span className="text-sm text-gray-600 dark:text-gray-400">
+            Pagina {page}
+            {!hasNext && page > 1 && ' · fine risultati'}
+          </span>
+          <Button
+            layout="outline"
+            disabled={!hasNext || isLoading}
+            onClick={() => onPageChange(page + 1)}
+            aria-label="Pagina successiva"
+          >
+            Successiva
+          </Button>
+        </div>
       </TableContainer>
 
       {/* Modal per la selezione della console */}

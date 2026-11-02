@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
 import { Link, useHistory } from 'react-router-dom'
-import ImageLight from '../assets/img/create-account-office.jpeg'
-import ImageDark from '../assets/img/create-account-office-dark.jpeg'
-import { GithubIcon, TwitterIcon } from '../icons'
+import ImageLight from '../assets/img/login-gaming.svg'
+import ImageDark from '../assets/img/login-gaming-dark.svg'
 import { Input, Label, Button, HelperText } from '@windmill/react-ui'
 import { register } from '../services/api'
 

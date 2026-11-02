@@ -1,142 +1,143 @@
-# FIX LUIGI
+# Sincronizzazione PSN tramite psnawp (versione 3.x).
+#
+# Novità 3.1.0 usate qui:
+# - client.title_stats() / client.trophy_titles(): iteratori paginati nativi
+# - psn.game_title(title_id, platform, account_id): np_communication_id senza wrapper
+# - client.game_entitlements(): entitlements ufficiali (con isSubscription) che
+#   sostituiscono la GraphQL custom per il flag "source" (digital/psplus)
 
 from psnawp_api import PSNAWP
-from tqdm import tqdm
-import pandas as pd
-import numpy as np
-import os
-from psnawp_api.models import SearchDomain
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from psnawp_api.models.trophies import PlatformType
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 import time
 import logging
 import sys
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
-def create_robust_session():
-    """Crea una sessione requests con configurazioni robuste per SSL"""
-    session = requests.Session()
-    
-    # Configura retry con backoff esponenziale
-    retry_strategy = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
-    
-    # Adapter con retry e timeout
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    
-    return session
+# Timeout per la risoluzione del np_communication_id di un singolo titolo
+TITLE_LOOKUP_TIMEOUT = 10
+# Rate limiting: pausa tra le chiamate pesanti (Sony non pubblica i limiti)
+TITLE_STATS_PAUSE = 1.0
+
+# Executor condiviso: un solo pool per l'intero sync (invece di uno per titolo)
+_EXECUTOR = ThreadPoolExecutor(max_workers=4)
+
 
 def sync_psn(npsso, logger=None):
-    """Sincronizzazione PSN con gestione errori migliorata"""
+    """Sincronizzazione PSN: giochi, trofei, entitlement e flag sorgente.
+
+    npsso: token SSO dell'account (64 caratteri).
+    """
     if logger is None:
         logger = logging.getLogger()
-    
-    logger.info("Starting PSN synchronization with improved error handling...")
-    print("Starting PSN synchronization with improved error handling...", flush=True)
-    
-    try:
-        # Crea oggetto PSNAWP con gestione errori
-        psn = PSNAWP(npsso)
-        
-        # Profile di npsso owner
-        client = psn.me()
-        
-        def get_np_communication_id(title_id):
-            try:
-                game_title = psn.game_title(title_id=title_id, account_id="me")
-                product_id = game_title.get_details()[0].get("id", None)
-                return {
-                    "np_communication_id": game_title.np_communication_id,
-                    "product_id": product_id,
-                }
-            except Exception as e:
-                logger.warning(f"Error retrieving np_communication_id for title_id {title_id}: {e}")
-                return {"np_communication_id": None, "product_id": None}
 
-        def get_np_communication_id_with_timeout(title_id, timeout=10):
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(get_np_communication_id, title_id)
+    logger.info("Starting PSN synchronization (psnawp 3.x)...")
+    print("Starting PSN synchronization (psnawp 3.x)...", flush=True)
+
+    try:
+        psn = PSNAWP(npsso)
+        client = psn.me()
+        account_id = client.account_id
+        logger.info(f"Authenticated PSN account: {client.online_id}")
+
+        def lookup_title_ids(t):
+            """Risolve np_communication_id e product_id di un titolo (con timeout)"""
+            def _lookup():
+                platform = (
+                    PlatformType.PS5
+                    if t.category is not None and t.category.name == "PS5"
+                    else PlatformType.PS4
+                )
                 try:
-                    return future.result(timeout=timeout)
-                except TimeoutError:
-                    logger.warning(f"Timeout getting np_communication_id for title_id {title_id}")
+                    game_title = psn.game_title(
+                        title_id=t.title_id,
+                        platform=platform,
+                        account_id=account_id,
+                    )
+                    product_id = None
+                    try:
+                        details = game_title.get_details()
+                        product_id = details[0].get("id") if details else None
+                    except Exception as e:
+                        logger.warning(f"Details not available for {t.title_id}: {e}")
+                    return {
+                        "np_communication_id": game_title.np_communication_id,
+                        "product_id": product_id,
+                    }
+                except Exception as e:
+                    logger.warning(f"Error retrieving np_communication_id for title_id {t.title_id}: {e}")
                     return {"np_communication_id": None, "product_id": None}
 
-        listOfListGames = []
-        listOfListTrophy = []
+            future = _EXECUTOR.submit(_lookup)
+            try:
+                return future.result(timeout=TITLE_LOOKUP_TIMEOUT)
+            except FutureTimeoutError:
+                logger.warning(f"Timeout getting np_communication_id for title_id {t.title_id}")
+                future.cancel()
+                return {"np_communication_id": None, "product_id": None}
+
+        games_records = []
+        trophy_records = []
 
         gameCount = 0
         totPlayTimeCount = 0
         logger.info("Recupero Dati Giochi: ")
         print("Recupero Dati Giochi: ", flush=True)
-        
+
         # Ottieni statistiche dei giochi
         try:
-            title_stats = list(client.title_stats())
+            title_stats = list(client.title_stats(page_size=200))
             logger.info(f"Found {len(title_stats)} games in title stats")
-            
+
             for t in title_stats:
                 logger.info("GAME: Title ID: " + str(t.title_id) + " / Name: " + str(t.name))
                 print("GAME: Title ID: " + str(t.title_id) + " / Name: " + str(t.name), flush=True)
-                
-                ids = get_np_communication_id_with_timeout(t.title_id)
+
+                ids = lookup_title_ids(t)
                 np_communication_id = ids["np_communication_id"]
                 product_id = ids["product_id"]
-                
-                console = t.category.name
+
+                console = t.category.name if t.category is not None else "UNKNOWN"
                 if console == "PS5":
                     console = 167
                 elif console == "PS4":
                     console = 48
                 else:
                     console = 9999
-                
-                listGame = [
-                    t.title_id,
-                    t.name,
-                    t.image_url,
-                    console,
-                    t.play_count,
-                    t.first_played_date_time,
-                    t.last_played_date_time,
-                    t.play_duration,
-                    np_communication_id,
-                    product_id
-                ]
-                
+
                 if np_communication_id is not None:
-                    listOfListGames.append(listGame)
+                    games_records.append({
+                        "title_id": t.title_id,
+                        "name": t.name,
+                        "image_url": t.image_url,
+                        "console": console,
+                        "play_count": t.play_count,
+                        "first_played_date_time": t.first_played_date_time,
+                        "last_played_date_time": t.last_played_date_time,
+                        "play_duration": t.play_duration,
+                        "np_communication_id": np_communication_id,
+                        "product_id": product_id,
+                    })
                     gameCount += 1
-                    totPlayTimeCount += int(t.play_duration.total_seconds())
-                    
-                time.sleep(2)  # Rate limiting
-                    
+                    if t.play_duration is not None:
+                        totPlayTimeCount += int(t.play_duration.total_seconds())
+
+                time.sleep(TITLE_STATS_PAUSE)  # Rate limiting
+
         except Exception as e:
             logger.error(f"Error getting title stats: {e}")
             print(f"Error getting title stats: {e}", flush=True)
-
-        np_communication_id_list = [
-            game[8] for game in listOfListGames if game[8] is not None
-        ]
 
         earnedTrophyCount = 0
         totTrophyCount = 0
         completeTrophyCount = 0
         logger.info("Recupero Dati da Trofei: ")
-        
+
         # Ottieni trofei
         try:
-            trophy_titles = list(client.trophy_titles())
+            trophy_titles = list(client.trophy_titles(page_size=50))
             logger.info(f"Found {len(trophy_titles)} trophy titles")
-            
+
             for tr in trophy_titles:
-                product_id = next((game[9] for game in listOfListGames if game[8] == tr.np_communication_id), None)
                 logger.info(
                     "TROPHY: Title ID: "
                     + str(tr.np_communication_id)
@@ -150,115 +151,68 @@ def sync_psn(npsso, logger=None):
                     + str(tr.title_name),
                     flush=True,
                 )
-                
-                listGame = [
-                    tr.np_communication_id,
-                    tr.title_name,
-                    (
-                        tr.defined_trophies.bronze
-                        + tr.defined_trophies.silver
-                        + tr.defined_trophies.gold
-                        + tr.defined_trophies.platinum
-                    ),
-                    (
-                        tr.earned_trophies.bronze
-                        + tr.earned_trophies.silver
-                        + tr.earned_trophies.gold
-                        + tr.earned_trophies.platinum
-                    ),
-                    (str(tr.progress) + "%"),
-                ]
-                listOfListTrophy.append(listGame)
-                earnedTrophyCount += (
-                    tr.earned_trophies.bronze
-                    + tr.earned_trophies.silver
-                    + tr.earned_trophies.gold
-                    + tr.earned_trophies.platinum
-                )
-                totTrophyCount += (
+
+                defined_trophies = (
                     tr.defined_trophies.bronze
                     + tr.defined_trophies.silver
                     + tr.defined_trophies.gold
                     + tr.defined_trophies.platinum
                 )
+                earned_trophies = (
+                    tr.earned_trophies.bronze
+                    + tr.earned_trophies.silver
+                    + tr.earned_trophies.gold
+                    + tr.earned_trophies.platinum
+                )
+
+                trophy_records.append({
+                    "np_communication_id": tr.np_communication_id,
+                    "title_name": tr.title_name,
+                    "totTrophy": defined_trophies,
+                    "earnedTrophy": earned_trophies,
+                    "percTrophy": str(tr.progress) + "%",
+                })
+                earnedTrophyCount += earned_trophies
+                totTrophyCount += defined_trophies
                 if tr.earned_trophies.platinum > 0:
                     completeTrophyCount += 1
-                    
+
         except Exception as e:
             logger.error(f"Error getting trophy titles: {e}")
             print(f"Error getting trophy titles: {e}", flush=True)
 
-        # Crea DataFrame con gestione casi vuoti
-        if listOfListTrophy:
-            df_trophy_psn = pd.DataFrame(
-                np.array(listOfListTrophy),
-                columns=[
-                    "np_communication_id",
-                    "title_name",
-                    "totTrophy",
-                    "earnedTrophy",
-                    "percTrophy",
-                ],
-            )
-        else:
-            # DataFrame vuoto con le colonne corrette
-            df_trophy_psn = pd.DataFrame(columns=[
-                "np_communication_id",
-                "title_name",
-                "totTrophy",
-                "earnedTrophy",
-                "percTrophy",
-            ])
-            
-        if listOfListGames:
-            df_games_psn = pd.DataFrame(
-                np.array(listOfListGames),
-                columns=[
-                    "title_id",
-                    "name",
-                    "image_url",
-                    "console",
-                    "play_count",
-                    "first_played_date_time",
-                    "last_played_date_time",
-                    "play_duration",
-                    "np_communication_id",
-                    "product_id",
-                ],
-            )
-        else:
-            # DataFrame vuoto con le colonne corrette
-            df_games_psn = pd.DataFrame(columns=[
-                "title_id",
-                "name",
-                "image_url",
-                "console",
-                "play_count",
-                "first_played_date_time",
-                "last_played_date_time",
-                "play_duration",
-                "np_communication_id",
-                "product_id",
-            ])
-        
-        # Merge delle tabelle solo se ci sono dati
-        if not df_games_psn.empty and not df_trophy_psn.empty:
-            df_merged = pd.merge(df_games_psn, df_trophy_psn, on="np_communication_id", how="right")
-            df_merged = df_merged.where(pd.notnull(df_merged), None)
-        else:
-            # Se uno dei due DataFrame è vuoto, usa l'altro o crea un DataFrame vuoto
-            if not df_games_psn.empty:
-                df_merged = df_games_psn
-            elif not df_trophy_psn.empty:
-                df_merged = df_trophy_psn
-            else:
-                # Entrambi vuoti, crea un DataFrame vuoto con tutte le colonne
-                df_merged = pd.DataFrame(columns=[
-                    "title_id", "name", "image_url", "console", "play_count",
-                    "first_played_date_time", "last_played_date_time", "play_duration",
-                    "np_communication_id", "product_id", "title_name", "totTrophy",
-                    "earnedTrophy", "percTrophy"
-                ])
+        # Merge dei record: un gioco senza trofei non ha corrispondenza nei trofei e
+        # viene scartato (come il merge how="right" della versione pandas); un trofeo
+        # senza record di gioco mantiene i campi di gioco a None
+        games_by_npcid = {
+            g["np_communication_id"]: g for g in games_records
+        }
+        merged_records = []
+        for tr in trophy_records:
+            game = games_by_npcid.get(tr["np_communication_id"])
+            row = {field: game.get(field) if game else None for field in (
+                "title_id", "name", "image_url", "console", "play_count",
+                "first_played_date_time", "last_played_date_time", "play_duration",
+                "np_communication_id", "product_id",
+            )}
+            row.update(tr)
+            merged_records.append(row)
+
+        # Flag sorgente dalle entitlement ufficiali (sostituisce la GraphQL custom):
+        # isSubscription=True -> licenza da abbonamento (psplus), altrimenti acquistata
+        source_by_product = {}
+        try:
+            entitlements = list(client.game_entitlements(page_size=200))
+            logger.info(f"Found {len(entitlements)} game entitlements")
+            for ent in entitlements:
+                pid = ent.get("productId")
+                if pid is not None and pid not in source_by_product:
+                    source_by_product[pid] = "psplus" if ent.get("isSubscription") else "digital"
+        except Exception as e:
+            logger.warning(f"Error getting game entitlements (source flag will be 'unknown'): {e}")
+
+        for row in merged_records:
+            row["source"] = source_by_product.get(row.get("product_id"), "unknown")
 
         print(
             "Game Count : "
@@ -270,24 +224,24 @@ def sync_psn(npsso, logger=None):
             + ", Complete Trophy Count : "
             + str(completeTrophyCount)
         )
-        
+
         logger.info(f"PSN sync completed: {gameCount} games, {earnedTrophyCount} trophies earned")
         print(f"PSN sync completed: {gameCount} games, {earnedTrophyCount} trophies earned", flush=True)
-        
+
         # Se non ci sono giochi, potrebbe essere un profilo privato
         if gameCount == 0 and earnedTrophyCount == 0:
             logger.warning("No games or trophies found. This might be a private profile or the user has no games.")
             print("No games or trophies found. This might be a private profile or the user has no games.", flush=True)
-        
+
         return {
-            "fullGames": df_merged.to_dict(orient="records"),
+            "fullGames": merged_records,
             "gameCount": gameCount,
             "earnedTrophyCount": earnedTrophyCount,
             "totTrophyCount": totTrophyCount,
             "completeTrophyCount": completeTrophyCount,
             "totPlayTimeCount": totPlayTimeCount,
         }
-        
+
     except Exception as e:
         logger.error(f"PSN sync failed: {e}")
         print(f"PSN sync failed: {e}", flush=True)
@@ -299,5 +253,59 @@ def sync_psn(npsso, logger=None):
             "completeTrophyCount": 0,
             "totPlayTimeCount": 0,
             "internalError": str(e)
-        } 
-# END FIX LUIGI
+        }
+
+
+# --- Lista completa trofei per gioco (per la collection trophy_lists) ---
+
+def create_client(npsso):
+    """Crea il client psnawp (una sola autenticazione per tutta la sync)"""
+    return PSNAWP(npsso)
+
+
+def fetch_trophy_list(client, np_communication_id, platform_keys=None):
+    """Recupera la lista completa dei trofei di un titolo con lo stato utente.
+
+    Ritorna una lista di dict serializzabili, o None in caso di fallimento.
+    Prova le piattaforme indicate (es. ["PS4", "PS5"]) poi PS5/PS4 come fallback.
+    """
+    if not np_communication_id:
+        return None
+
+    candidates = []
+    for key in platform_keys or ["PS4", "PS5", "PS3", "PSVITA"]:
+        try:
+            candidates.append(PlatformType(key))
+        except ValueError:
+            continue
+    for fallback in (PlatformType.PS5, PlatformType.PS4):
+        if fallback not in candidates:
+            candidates.append(fallback)
+
+    for platform in candidates:
+        try:
+            iterator = client.trophies(
+                np_communication_id,
+                platform,
+                include_progress=True,
+                trophy_group_id="all",
+                limit=None,
+            )
+            trophies = []
+            for t in iterator:
+                earned_dt = getattr(t, "earned_date_time", None)
+                trophies.append({
+                    "trophy_id": getattr(t, "trophy_id", None),
+                    "name": getattr(t, "name", ""),
+                    "detail": getattr(t, "detail", ""),
+                    "type": getattr(t, "type", None),
+                    "icon_url": getattr(t, "icon_url", ""),
+                    "earned": bool(getattr(t, "earned", False)),
+                    "earned_date": earned_dt.isoformat() if earned_dt else None,
+                    "progress_value": getattr(t, "progress_value", None),
+                    "rarity": getattr(t, "rarity", None),
+                })
+            return trophies
+        except Exception:
+            continue
+    return None

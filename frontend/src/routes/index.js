@@ -1,22 +1,17 @@
 import { lazy } from 'react'
 
 const Dashboard = lazy(() => import('../pages/Dashboard'))
-const Forms = lazy(() => import('../pages/Forms'))
-const Cards = lazy(() => import('../pages/Cards'))
-const Charts = lazy(() => import('../pages/Charts'))
-const Buttons = lazy(() => import('../pages/Buttons'))
-const Modals = lazy(() => import('../pages/Modals'))
-const Tables = lazy(() => import('../pages/Tables'))
 const Page404 = lazy(() => import('../pages/404'))
-const Blank = lazy(() => import('../pages/Blank'))
 const GameSearch = lazy(() => import('../pages/GameSearch'))
 const MyLibrary = lazy(() => import('../pages/MyLibrary'))
 const Wishlist = lazy(() => import('../pages/Wishlist'))
 const GameExplorer = lazy(() => import('../pages/GameExplorer'))
 const SyncJobs = lazy(() => import('../pages/SyncJobs'))
-const Companies = lazy(() => import('../pages/Companies'))
-const Genres = lazy(() => import('../pages/Genres'))
-const GameModes = lazy(() => import('../pages/GameModes'))
+const Services = lazy(() => import('../pages/Services'))
+const Settings = lazy(() => import('../pages/Settings'))
+const Statistics = lazy(() => import('../pages/Statistics'))
+const VerifyGames = lazy(() => import('../pages/VerifyGames'))
+const GameDetail = lazy(() => import('../pages/GameDetail'))
 
 /**
  * ⚠ These are internal routes!
@@ -34,38 +29,8 @@ const routes = [
     component: MyLibrary,
   },
   {
-    path: '/forms',
-    component: Forms,
-  },
-  /*
-  {
-    path: '/cards',
-    component: Cards,
-  },
-  {
-    path: '/charts',
-    component: Charts,
-  },
-  {
-    path: '/buttons',
-    component: Buttons,
-  },
-  {
-    path: '/modals',
-    component: Modals,
-  },
-  {
-    path: '/tables',
-    component: Tables,
-  },
-  */
-  {
     path: '/404',
     component: Page404,
-  },
-  {
-    path: '/blank',
-    component: Blank,
   },
   {
     path: '/gamesearch',
@@ -84,16 +49,24 @@ const routes = [
     component: SyncJobs,
   },
   {
-    path: '/companies',
-    component: Companies,
+    path: '/services',
+    component: Services,
   },
   {
-    path: '/genres',
-    component: Genres,
+    path: '/settings',
+    component: Settings,
   },
   {
-    path: '/gamemodes',
-    component: GameModes,
+    path: '/statistics',
+    component: Statistics,
+  },
+  {
+    path: '/verify',
+    component: VerifyGames,
+  },
+  {
+    path: '/games/:gameId',
+    component: GameDetail,
   },
 ]
 

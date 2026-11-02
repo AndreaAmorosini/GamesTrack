@@ -262,6 +262,45 @@ def init_mongo():
                 # )
 
             # your init logic here...
+
+            # --- Indici (sempre, idempotenti: servono anche ai deployment esistenti) ---
+            logging.info("Ensuring indexes...")
+            indexes = [
+                # Integrità: email e username univoci (la registrazione fa
+                # affidamento sul DuplicateKeyError)
+                ("users", [("email", ASCENDING)], {"unique": True}),
+                ("users", [("username", ASCENDING)], {"unique": True}),
+                # Un collegamento piattaforma per utente
+                ("platforms-users", [("user_id", ASCENDING), ("platform", ASCENDING)], {"unique": True}),
+                # Lookup delle librerie (usati da tutte le pagine e dal worker)
+                ("game_user", [("user_id", ASCENDING), ("platform", ASCENDING)], {}),
+                ("game_user", [("game_id", ASCENDING), ("user_id", ASCENDING), ("platform", ASCENDING)], {"unique": True}),
+                ("game_user_wishlist", [("user_id", ASCENDING), ("game_id", ASCENDING)], {"unique": True}),
+                # Storico job e log
+                ("schedules", [("user_id", ASCENDING), ("platform", ASCENDING)], {}),
+                ("schedules", [("job_string_id", ASCENDING)], {}),
+                ("sync_logs", [("job_string_id", ASCENDING), ("timestamp", ASCENDING)], {}),
+                # Tracking prezzi
+                ("price_history", [("game_id", ASCENDING), ("user_id", ASCENDING), ("timestamp", ASCENDING)], {}),
+                ("app_settings", [("key", ASCENDING)], {"unique": True}),
+                ("steam_schema_cache", [("steam_app_id", ASCENDING)], {"unique": True}),
+                # Ricerche sul catalogo
+                ("games", [("normalized_name", ASCENDING)], {}),
+                ("games", [("name", ASCENDING)], {}),
+                ("games", [("release_date", ASCENDING)], {}),
+                ("games", [("total_rating", ASCENDING)], {}),
+                ("games", [("steam_game_id", ASCENDING)], {}),
+                ("games", [("psn_game_id", ASCENDING)], {}),
+            ]
+            for collection, keys, opts in indexes:
+                try:
+                    db[collection].create_index(keys, **opts)
+                except Exception as e:
+                    # Un indice unique può fallire se dati pre-esistenti hanno
+                    # duplicati: non blocca l'avvio, ma va sistemato a mano
+                    logging.warning(f"Index creation failed on {collection} {keys}: {e}")
+            logging.info("Indexes ensured.")
+
             logging.info("MongoDB connected and initialized.")
             client.close()
             return

@@ -9,11 +9,6 @@ export default [
     icon: 'HomeIcon', // the component being exported from icons/index.js
     name: 'Dashboard', // name that appear in Sidebar
   },
-  // {
-  //   path: '/app/forms',
-  //   icon: 'FormsIcon',
-  //   name: 'Update Profile',
-  // },
   {
     path: '/app/library',
     icon: 'GamesIcon',
@@ -40,50 +35,23 @@ export default [
     name: 'Storico Sincronizzazioni',
   },
   {
-    path: '/app/companies',
-    icon: 'BuildingIcon',
-    name: 'Aziende',
+    path: '/app/services',
+    icon: 'OutlineCogIcon',
+    name: 'Servizi',
   },
   {
-    path: '/app/genres',
-    icon: 'TagIcon',
-    name: 'Generi',
+    path: '/app/statistics',
+    icon: 'TrophyIcon',
+    name: 'Statistiche',
   },
   {
-    path: '/app/gamemodes',
-    icon: 'UsersIcon',
-    name: 'Modalità di Gioco',
-  },
-  /*
-  {
-    path: '/app/forms',
-    icon: 'FormsIcon',
-    name: 'Forms',
+    path: '/app/verify',
+    icon: 'SearchIcon',
+    name: 'Da Verificare',
   },
   {
-    path: '/app/cards',
-    icon: 'CardsIcon',
-    name: 'Cards',
+    path: '/app/settings',
+    icon: 'RefreshIcon',
+    name: 'Impostazioni',
   },
-  {
-    path: '/app/charts',
-    icon: 'ChartsIcon',
-    name: 'Charts',
-  },
-  {
-    path: '/app/buttons',
-    icon: 'ButtonsIcon',
-    name: 'Buttons',
-  },
-  {
-    path: '/app/modals',
-    icon: 'ModalsIcon',
-    name: 'Modals',
-  },
-  {
-    path: '/app/tables',
-    icon: 'TablesIcon',
-    name: 'Tables',
-  },
-  */
 ]

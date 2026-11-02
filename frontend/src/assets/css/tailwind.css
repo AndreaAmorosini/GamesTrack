@@ -1,3 +1,62 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ------------------------------------------------------------------
+   Ottimizzazioni mobile / PWA (iPhone, iPad, desktop installato)
+   ------------------------------------------------------------------ */
+
+/* Evita l'ingrandimento automatico del testo in landscape su iOS Safari */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Tocco più pulito: niente flash grigio/al blu sui tap */
+body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  background-color: #f9fafb;
+}
+
+/* Scorrimento più naturale e niente rimbalzo laterale accidentale */
+main {
+  overscroll-behavior-y: contain;
+}
+
+/* In modalità app installata rispetta le aree sicure (notch, home indicator) */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* In dark mode di sistema, lo sfondo delle aree sicure non deve essere bianco */
+@media (display-mode: standalone) and (prefers-color-scheme: dark) {
+  body {
+    background-color: #111827;
+  }
+}
+
+/* Scroll orizzontale fluido per le tabelle larghe su mobile */
+.overflow-x-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Input: dimensione minima 16px per evitare lo zoom automatico di iOS sul focus */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+@media (min-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: inherit;
+  }
+}

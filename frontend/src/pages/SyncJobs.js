@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import PageTitle from '../components/Typography/PageTitle'
 import {
   Table,
@@ -12,11 +12,22 @@ import {
   Button,
   Pagination,
   Select,
+  Card,
+  CardBody,
+  Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
 } from '@windmill/react-ui'
 import { SyncIcon, CheckIcon, XIcon, ClockIcon } from '../icons'
-import { getSyncJobs } from '../services/api'
+import { TableSkeleton } from '../components/Skeletons'
+import { getSyncJobs, getSyncLogs } from '../services/api'
+import { useSync } from '../context/SyncContext'
 
 function SyncJobs() {
+  // Stato globale delle sync (condiviso con le altre pagine)
+  const { activeSync, isSyncing, startingPlatform, startSync } = useSync()
+
   // Stati per i job
   const [jobs, setJobs] = useState([])
   const [isLoading, setIsLoading] = useState(false)
@@ -29,6 +40,11 @@ function SyncJobs() {
   // Stati per la paginazione
   const [page, setPage] = useState(1)
   const [totalResults, setTotalResults] = useState(0)
+
+  // Stati per il visualizzatore di log
+  const [logsModalJob, setLogsModalJob] = useState(null) // job_string_id
+  const [logsContent, setLogsContent] = useState([])
+  const [logsLoading, setLogsLoading] = useState(false)
   const resultsPerPage = 20
 
   // Carica i job di sincronizzazione
@@ -57,12 +73,52 @@ function SyncJobs() {
   // Carica i job quando cambiano i filtri o la pagina
   useEffect(() => {
     fetchJobs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, platformFilter, page])
 
   // Gestione cambio pagina
   const onPageChange = (p) => {
     setPage(p)
   }
+
+  // Ricarica i job quando una sync (gestita dal SyncContext) si conclude
+  const prevSyncRef = useRef(null)
+  useEffect(() => {
+    if (prevSyncRef.current && !activeSync) {
+      fetchJobs()
+    }
+    prevSyncRef.current = activeSync
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSync])
+
+  // --- Visualizzazione dei log di un job ---
+  const openLogs = async (jobStringId) => {
+    setLogsModalJob(jobStringId)
+    setLogsContent([])
+    setLogsLoading(true)
+    try {
+      const data = await getSyncLogs(jobStringId)
+      setLogsContent(data.logs || [])
+    } catch (err) {
+      setLogsContent([{ level: 'ERROR', message: err.message || 'Errore nel caricamento dei log' }])
+    } finally {
+      setLogsLoading(false)
+    }
+  }
+
+  // Aggiorna i log in tempo reale mentre il modal è aperto e il job è in corso
+  useEffect(() => {
+    if (!logsModalJob) return undefined
+    const timer = setInterval(async () => {
+      try {
+        const data = await getSyncLogs(logsModalJob)
+        setLogsContent(data.logs || [])
+      } catch (err) {
+        // silenzioso: il modal resta sui dati correnti
+      }
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [logsModalJob])
 
   // Reset filtri
   const resetFilters = () => {
@@ -125,6 +181,17 @@ function SyncJobs() {
     }
   }
 
+  // Funzione per ottenere il nome leggibile di una piattaforma
+  const getPlatformName = (platform) => {
+    switch (platform?.toLowerCase()) {
+      case 'steam': return 'Steam'
+      case 'psn': return 'PSN'
+      case 'retroachievements': return 'RetroAchievements'
+      case 'gog': return 'GOG'
+      default: return platform
+    }
+  }
+
   // Funzione per ottenere il badge della piattaforma
   const getPlatformBadge = (platform) => {
     switch (platform?.toLowerCase()) {
@@ -132,6 +199,12 @@ function SyncJobs() {
         return <Badge type="success">Steam</Badge>
       case 'psn':
         return <Badge type="warning">PlayStation Network</Badge>
+      case 'retroachievements':
+        return <Badge type="danger">RetroAchievements</Badge>
+      case 'gog':
+        return <Badge type="neutral">GOG</Badge>
+      case 'price_track':
+        return <Badge type="info">Tracking Prezzi</Badge>
       default:
         return <Badge type="default">{platform || 'N/A'}</Badge>
     }
@@ -140,6 +213,36 @@ function SyncJobs() {
   return (
     <>
       <PageTitle>Storico Sincronizzazioni</PageTitle>
+
+      {/* Avvio pipeline di sincronizzazione */}
+      <Card className="mb-8">
+        <CardBody>
+          <h3 className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-4">
+            Avvia sincronizzazione
+          </h3>
+          <div className="flex flex-wrap gap-3">
+            {['steam', 'psn', 'retroachievements', 'gog'].map((platform) => (
+              <Button
+                key={platform}
+                onClick={() => startSync(platform)}
+                disabled={isSyncing}
+                className={isSyncing ? 'opacity-50 cursor-not-allowed' : ''}
+              >
+                {startingPlatform === platform ? 'Avvio...' : `Sincronizza ${getPlatformName(platform)}`}
+              </Button>
+            ))}
+          </div>
+          {activeSync && (
+            <div className="mt-4 flex items-center text-sm text-yellow-600 dark:text-yellow-400">
+              <SyncIcon className="w-4 h-4 mr-2 animate-spin" />
+              Job {activeSync.jobId.slice(0, 8)}... in corso — stato: {activeSync.status}
+            </div>
+          )}
+          <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            Le credenziali delle piattaforme si configurano nella pagina <strong>Servizi</strong>.
+          </p>
+        </CardBody>
+      </Card>
 
       {/* Sezione Filtri */}
       <div className="px-4 py-3 mb-8 bg-white rounded-lg shadow-md dark:bg-gray-800">
@@ -184,6 +287,9 @@ function SyncJobs() {
               <option value="">Tutte le piattaforme</option>
               <option value="steam">Steam</option>
               <option value="psn">PlayStation Network</option>
+              <option value="retroachievements">RetroAchievements</option>
+              <option value="gog">GOG</option>
+              <option value="price_track">Tracking Prezzi</option>
             </Select>
           </div>
           
@@ -200,14 +306,13 @@ function SyncJobs() {
       </div>
 
       {/* Messaggi di stato */}
-      {isLoading && <p className="text-gray-600 dark:text-gray-400">Caricamento job in corso...</p>}
       {error && <p className="text-red-600 dark:text-red-400">{error}</p>}
 
       {/* Tabella Job */}
       <TableContainer className="mb-8">
         <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
           <p className="text-sm text-blue-700 dark:text-blue-300">
-            <strong>💡 Informazioni:</strong> Questa pagina mostra lo storico di tutte le sincronizzazioni effettuate con le tue piattaforme di gioco.
+            <strong>Informazioni:</strong> Questa pagina mostra lo storico di tutte le sincronizzazioni effettuate con le tue piattaforme di gioco.
           </p>
         </div>
         <Table>
@@ -227,9 +332,17 @@ function SyncJobs() {
               <TableRow>
                 <TableCell colSpan="7" className="text-center py-8">
                   <div className="text-gray-500 dark:text-gray-400">
-                    <SyncIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>Nessun job di sincronizzazione trovato</p>
-                    <p className="text-sm">I job appariranno qui dopo aver effettuato delle sincronizzazioni</p>
+                    {isLoading ? (
+                      <div className="text-left">
+                        <TableSkeleton rows={5} cols={6} />
+                      </div>
+                    ) : (
+                      <div>
+                        <SyncIcon className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                        <p>Nessun job di sincronizzazione trovato</p>
+                        <p className="text-sm">Avvia la tua prima sincronizzazione con i pulsanti qui sopra</p>
+                      </div>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -269,12 +382,17 @@ function SyncJobs() {
                     <div className="text-sm">
                       {job.result && (
                         <div>
-                          <p><strong>Giochi sincronizzati:</strong> {job.result.games_synced || 0}</p>
+                          <p><strong>Giochi sincronizzati:</strong> {job.result.games_synced || job.game_inserted || 0}</p>
                           <p><strong>Achievement/Trofei:</strong> {job.result.achievements_synced || 0}</p>
                           {job.error && (
                             <p className="text-red-600"><strong>Errore:</strong> {job.error}</p>
                           )}
                         </div>
+                      )}
+                      {job.job_string_id && (
+                        <Button size="small" layout="outline" onClick={() => openLogs(job.job_string_id)}>
+                          Visualizza log
+                        </Button>
                       )}
                     </div>
                   </TableCell>
@@ -363,8 +481,46 @@ function SyncJobs() {
           </div>
         </div>
       )}
+
+      {/* Modal log job */}
+      <Modal isOpen={!!logsModalJob} onClose={() => setLogsModalJob(null)}>
+        <ModalHeader className="text-center">
+          Log job: {logsModalJob}
+        </ModalHeader>
+        <ModalBody>
+          {logsLoading ? (
+            <p className="text-sm text-gray-500">Caricamento log...</p>
+          ) : (
+            <div className="max-h-96 overflow-y-auto bg-gray-900 text-gray-100 rounded-lg p-3 font-mono text-xs">
+              {logsContent.length === 0 ? (
+                <p className="text-gray-400">Nessun log disponibile per questo job</p>
+              ) : (
+                logsContent.map((entry, i) => (
+                  <div key={i} className="mb-1">
+                    <span className="text-gray-500">{entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString('it-IT') : ''}</span>
+                    {' '}
+                    <span className={entry.level === 'ERROR' ? 'text-red-400' : entry.level === 'WARNING' ? 'text-yellow-400' : 'text-gray-300'}>
+                      [{entry.level}]
+                    </span>
+                    {' '}
+                    <span>{entry.message}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+          <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            I log si aggiornano automaticamente ogni 3 secondi mentre il modal è aperto.
+          </p>
+        </ModalBody>
+        <ModalFooter>
+          <div className="hidden sm:block">
+            <Button layout="outline" onClick={() => setLogsModalJob(null)}>Chiudi</Button>
+          </div>
+        </ModalFooter>
+      </Modal>
     </>
   )
 }
 
-export default SyncJobs 
+export default SyncJobs

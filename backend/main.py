@@ -1,7 +1,9 @@
 from typing import Union, Annotated
 import sys
+import string
 from fastapi import FastAPI, HTTPException, status, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware  # Luigi   (per il frontend)
+from fastapi.middleware.gzip import GZipMiddleware  # compressione risposte API
 from pydantic import BaseModel, EmailStr, Field
 from init_db import init_mongo
 import os
@@ -10,6 +12,7 @@ from datetime import datetime
 from bson import ObjectId
 from utils.igdb_api import IGDBAutoAuthClient
 from utils.db import get_db
+from utils.crypto import encrypt_value, decrypt_value
 from utils.user_utils import router as user_utils_router
 from utils.user_utils import get_password_hash, get_current_active_user
 import logging
@@ -41,8 +44,35 @@ class User(BaseModel):
     steam_api_key: str | None = None
     psn: str | None = None
     psn_api_key: str | None = None
+    ra: str | None = None  # username RetroAchievements
+    ra_api_key: str | None = None  # Web API Key RetroAchievements
+    gog: str | None = None  # username/email GOG
+    gog_password: str | None = None  # password GOG
     metadata_api_key: str | None = None  # Placeholder for future API key
     steam_id: str | None = None  # Placeholder for Steam ID, if needed
+
+
+class UserUpdate(BaseModel):
+    """Aggiornamento parziale dell'utente e delle credenziali piattaforme.
+
+    Tutti i campi opzionali: la PATCH /users/update riceve solo ciò che cambia
+    (il modello User completo esigerebbe email/username/password anche quando
+    si salvano solo le credenziali di una piattaforma -> 422).
+    """
+
+    email: EmailStr | None = None
+    username: str | None = None
+    password: str | None = None
+    steam: str | None = None
+    steam_api_key: str | None = None
+    psn: str | None = None
+    psn_api_key: str | None = None
+    ra: str | None = None
+    ra_api_key: str | None = None
+    gog: str | None = None
+    gog_password: str | None = None
+    metadata_api_key: str | None = None
+    steam_id: str | None = None
 
 
 class Request(BaseModel):
@@ -53,16 +83,25 @@ class Request(BaseModel):
 app = FastAPI()
 
 # Luigi   (per il frontend)
-# Configurazione CORS
+# Configurazione CORS: l'app usa autenticazione Bearer (nessun cookie),
+# quindi di default accetta qualsiasi origine (utile con Tailscale, dove
+# l'origine è l'IP/hostname della macchina). Restringibile con CORS_ORIGINS
+# (lista separata da virgole).
+_cors_origins = [
+    origin.strip() for origin in os.getenv("CORS_ORIGINS", "*").split(",") if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(user_utils_router, prefix="/users", tags=["users"])
+
+# Comprime le risposte API (liste di giochi con descrizioni: spesso > 100 KB)
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 test_env = os.getenv("MONGO_INIT_USER"), os.getenv("MONGO_INIT_PASS")
 mongo_uri = f"mongodb://{os.getenv('MONGO_INIT_USER')}:{os.getenv('MONGO_INIT_PASS')}@mongo:27017/"
@@ -128,7 +167,7 @@ def register_user(user: User, db=Depends(get_db)):
                 "platform": "steam",
                 "user_id": user_id,
                 "platform_id": user.steam,
-                "api_key": user.steam_api_key,
+                "api_key": encrypt_value(user.steam_api_key),
                 "steam_id": user.steam_id,
                 "full_trophies_count": 0,
             }
@@ -145,7 +184,7 @@ def register_user(user: User, db=Depends(get_db)):
                 "platform": "psn",
                 "user_id": user_id,
                 "platform_id": user.psn,
-                "api_key": user.psn_api_key,
+                "api_key": encrypt_value(user.psn_api_key),
                 "full_trophies_count": 0,
             }
             try:
@@ -155,7 +194,39 @@ def register_user(user: User, db=Depends(get_db)):
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="PSN platform already linked",
                 )
-                
+
+        if user.ra_api_key is not None:
+            platform_user_doc = {
+                "platform": "retroachievements",
+                "user_id": user_id,
+                "platform_id": user.ra,
+                "api_key": encrypt_value(user.ra_api_key),
+                "full_trophies_count": 0,
+            }
+            try:
+                db["platforms-users"].insert_one(platform_user_doc)
+            except errors.DuplicateKeyError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="RetroAchievements platform already linked",
+                )
+
+        if user.gog_password is not None:
+            platform_user_doc = {
+                "platform": "gog",
+                "user_id": user_id,
+                "platform_id": user.gog,
+                "api_key": encrypt_value(user.gog_password),
+                "full_trophies_count": 0,
+            }
+            try:
+                db["platforms-users"].insert_one(platform_user_doc)
+            except errors.DuplicateKeyError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="GOG platform already linked",
+                )
+
         return {"id": str(result.inserted_id), "email": user.email}
     except errors.DuplicateKeyError:
         raise HTTPException(
@@ -165,7 +236,7 @@ def register_user(user: User, db=Depends(get_db)):
 #Update the user data by ObjectID by adding the platform IDs and API keys ready to retrieve data by external job
 @app.patch("/users/update", response_model=dict)
 def update_user(
-    update: User,
+    update: UserUpdate,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db)
 ):
@@ -194,7 +265,7 @@ def update_user(
                         "platform_id": update.steam
                         if update.steam
                         else link.get("platform_id"),
-                        "api_key": update.steam_api_key
+                        "api_key": encrypt_value(update.steam_api_key)
                         if update.steam_api_key
                         else link.get("api_key"),
                         "steam_id": update.steam_id,
@@ -207,7 +278,7 @@ def update_user(
                     "platform": "steam",
                     "user_id": str(current_user.id),
                     "platform_id": update.steam,
-                    "api_key": update.steam_api_key,
+                    "api_key": encrypt_value(update.steam_api_key),
                     "steam_id": update.steam_id,
                     "full_trophies_count": 0,
                 }
@@ -222,7 +293,7 @@ def update_user(
                         "platform_id": update.psn
                         if update.psn
                         else link.get("platform_id"),
-                        "api_key": update.psn_api_key
+                        "api_key": encrypt_value(update.psn_api_key)
                         if update.psn_api_key
                         else link.get("api_key"),
                     }
@@ -234,25 +305,95 @@ def update_user(
                     "platform": "psn",
                     "user_id": str(current_user.id),
                     "platform_id": update.psn,
-                    "api_key": update.psn_api_key,
+                    "api_key": encrypt_value(update.psn_api_key),
                     "full_trophies_count": 0,
                 }
-            )    
+            )
+
+    if update.ra is not None or update.ra_api_key is not None:
+        link = db["platforms-users"].find_one({"user_id": str(current_user.id), "platform": "retroachievements"})
+        if link:
+            db["platforms-users"].update_one(
+                {"user_id": str(current_user.id), "platform": "retroachievements"},
+                {
+                    "$set": {
+                        "platform_id": update.ra
+                        if update.ra
+                        else link.get("platform_id"),
+                        "api_key": encrypt_value(update.ra_api_key)
+                        if update.ra_api_key
+                        else link.get("api_key"),
+                    }
+                },
+            )
+        else:
+            db["platforms-users"].insert_one(
+                {
+                    "platform": "retroachievements",
+                    "user_id": str(current_user.id),
+                    "platform_id": update.ra,
+                    "api_key": encrypt_value(update.ra_api_key),
+                    "full_trophies_count": 0,
+                }
+            )
+
+    if update.gog is not None or update.gog_password is not None:
+        link = db["platforms-users"].find_one({"user_id": str(current_user.id), "platform": "gog"})
+        if link:
+            db["platforms-users"].update_one(
+                {"user_id": str(current_user.id), "platform": "gog"},
+                {
+                    "$set": {
+                        "platform_id": update.gog
+                        if update.gog
+                        else link.get("platform_id"),
+                        "api_key": encrypt_value(update.gog_password)
+                        if update.gog_password
+                        else link.get("api_key"),
+                    }
+                },
+            )
+        else:
+            db["platforms-users"].insert_one(
+                {
+                    "platform": "gog",
+                    "user_id": str(current_user.id),
+                    "platform_id": update.gog,
+                    "api_key": encrypt_value(update.gog_password),
+                    "full_trophies_count": 0,
+                }
+            )
     
-    if not update_fields:
+    # Le credenziali piattaforme non finiscono in update_fields (vanno in platforms-users):
+    # 400 solo se non è cambiato proprio nulla
+    platform_touched = (
+        update.steam is not None
+        or update.steam_api_key is not None
+        or update.psn is not None
+        or update.psn_api_key is not None
+        or update.ra is not None
+        or update.ra_api_key is not None
+        or update.gog is not None
+        or update.gog_password is not None
+    )
+    if not update_fields and not platform_touched:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No valid fields to update"
         )
-        
-    updated = db.users.find_one_and_update(
-        {"_id": oid}, {"$set": update_fields}, return_document=True
-    )
-    
-    if not updated:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+
+    if update_fields:
+        updated = db.users.find_one_and_update(
+            {"_id": oid}, {"$set": update_fields}, return_document=True
         )
-    return user_response(updated)
+
+        if not updated:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+            )
+        return user_response(updated)
+
+    # Solo credenziali piattaforma aggiornate: il documento utente non è cambiato
+    return {"id": str(oid), "message": "Credenziali piattaforma aggiornate"}
 
 #Avvia un job di sincronizzazione per la piattaforma desiderata
 @app.post("/sync/{platform}", response_model=dict)
@@ -290,6 +431,7 @@ def get_sync_status(job_id: str, db=Depends(get_db)):
 #Recupera una lista di giochi, filtrata, ordinata e paginata
 @app.get("/games", response_model=dict)
 def get_all_games(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     db=Depends(get_db),
     name: str = Query(None, description="Filter games by name (case-insensitive)"),
     genres: list[int] = Query(None, description="Filter games by genres (comma-separated)"),
@@ -344,75 +486,80 @@ def get_all_games(
         
     pipeline = [
         {"$match": match_stage} if match_stage else {"$match": {}},
-        # Lookup per i generi
-        {
-            "$lookup": {
-                "from": "genres",
-                "localField": "genres",
-                "foreignField": "igdb_id",
-                "as": "genre_details",
-            }
-        },
-        # Lookup per le piattaforme
-        {
-            "$lookup": {
-                "from": "console_platforms",
-                "localField": "platforms",
-                "foreignField": "igdb_id",
-                "as": "platform_details",
-            }
-        },
-        # Lookup per il developer
-        {
-            "$lookup": {
-                "from": "companies",
-                "localField": "developer",
-                "foreignField": "igdb_id",
-                "as": "developer_details",
-            }
-        },
-        # Lookup per il publisher
-        {
-            "$lookup": {
-                "from": "companies",
-                "localField": "publisher",
-                "foreignField": "igdb_id",
-                "as": "publisher_details",
-            }
-        },
-        # Lookup per le modalità di gioco
-        {
-            "$lookup": {
-                "from": "game_modes",
-                "localField": "game_modes",
-                "foreignField": "igdb_id",
-                "as": "game_mode_details",
-            }
-        },
-        # Aggiungi campi computati per i nomi
-        {
-            "$addFields": {
-                "genre_names": "$genre_details.genre_name",
-                "platform_names": "$platform_details.platform_name",
-                "developer_names": "$developer_details.company_name",
-                "publisher_names": "$publisher_details.company_name",
-                "game_mode_names": "$game_mode_details.game_mode_name",
-            },
-        },
-        # Rimuovi i campi di dettaglio se non li vuoi nel risultato finale
-        {
-            "$project": {
-                "genre_details": 0,
-                "platform_details": 0,
-                "developer_details": 0,
-                "publisher_details": 0,
-                "game_mode_details": 0,
-            }
-        },
-        {"$sort": sort_stage},
         {
             "$facet": {
-                "games": [{"$skip": (page - 1) * limit}, {"$limit": limit}],
+                "games": [
+                    # Paginazione PRIMA delle lookup: le lookup girano solo
+                    # sui risultati della pagina, non su tutto il catalogo
+                    {"$sort": sort_stage},
+                    {"$skip": (page - 1) * limit},
+                    {"$limit": limit},
+                    # Lookup per i generi
+                    {
+                        "$lookup": {
+                            "from": "genres",
+                            "localField": "genres",
+                            "foreignField": "igdb_id",
+                            "as": "genre_details",
+                        }
+                    },
+                    # Lookup per le piattaforme
+                    {
+                        "$lookup": {
+                            "from": "console_platforms",
+                            "localField": "platforms",
+                            "foreignField": "igdb_id",
+                            "as": "platform_details",
+                        }
+                    },
+                    # Lookup per il developer
+                    {
+                        "$lookup": {
+                            "from": "companies",
+                            "localField": "developer",
+                            "foreignField": "igdb_id",
+                            "as": "developer_details",
+                        }
+                    },
+                    # Lookup per il publisher
+                    {
+                        "$lookup": {
+                            "from": "companies",
+                            "localField": "publisher",
+                            "foreignField": "igdb_id",
+                            "as": "publisher_details",
+                        }
+                    },
+                    # Lookup per le modalità di gioco
+                    {
+                        "$lookup": {
+                            "from": "game_modes",
+                            "localField": "game_modes",
+                            "foreignField": "igdb_id",
+                            "as": "game_mode_details",
+                        }
+                    },
+                    # Aggiungi campi computati per i nomi
+                    {
+                        "$addFields": {
+                            "genre_names": "$genre_details.genre_name",
+                            "platform_names": "$platform_details.platform_name",
+                            "developer_names": "$developer_details.company_name",
+                            "publisher_names": "$publisher_details.company_name",
+                            "game_mode_names": "$game_mode_details.game_mode_name",
+                        },
+                    },
+                    # Rimuovi i campi di dettaglio se non li vuoi nel risultato finale
+                    {
+                        "$project": {
+                            "genre_details": 0,
+                            "platform_details": 0,
+                            "developer_details": 0,
+                            "publisher_details": 0,
+                            "game_mode_details": 0,
+                        }
+                    },
+                ],
                 "total_count": [{"$count": "count"}],
             }
         },
@@ -602,7 +749,10 @@ def get_all_consoles(
     return consoles
 
 @app.get("/platforms/mapping", response_model=dict)
-def get_platform_mapping(db=Depends(get_db)):
+def get_platform_mapping(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
     """
     Get platform mapping for frontend use
     Returns a mapping of platform names/abbreviations to IGDB IDs
@@ -1181,8 +1331,8 @@ def search_igdb_games(
     try:
         # Costruisci la query IGDB
         where_conditions = []
-        # Solo giochi (category = 0) oppure giochi rimasterizzati/remake (category = 8)
-        where_conditions.append("(category = 0 | category = 4 | category = 8 | category = 9 | category = 11 | category = 10)")
+        # Solo giochi (game_type = 0) oppure giochi rimasterizzati/remake/port/expansion (game_type = 8/9/11/10/4)
+        where_conditions.append("(game_type = 0 | game_type = 4 | game_type = 8 | game_type = 9 | game_type = 11 | game_type = 10)")
 
         # Filtro per nome
         if name:
@@ -1872,6 +2022,7 @@ def get_user_library(
                     "platforms_data": {
                         "$push": {
                             "platform": "$platform",
+                            "source": {"$ifNull": ["$source", "unknown"]},
                             "play_count": {
                                 "$cond": {
                                     "if": {"$eq": ["$platform", "psn"]},
@@ -1895,6 +2046,18 @@ def get_user_library(
                     "name": 1,
                     "cover_image": 1,
                     "own_platforms": "$platforms_data.platform",
+                    "sources": {
+                        "$arrayToObject": {
+                            "$map": {
+                                "input": "$platforms_data",
+                                "as": "pd",
+                                "in": {
+                                    "k": "$$pd.platform",
+                                    "v": "$$pd.source",
+                                },
+                            }
+                        }
+                    },
                     "console": {
                         "$reduce": {
                             "input": "$platforms_data.console",
@@ -2099,9 +2262,9 @@ def get_user_stats(
         # Calculate totals and platform distribution
         total_achievements = 0
         total_playcount = 0
-        games_by_platform = {"steam": 0, "psn": 0, "other": 0}
-        achievements_by_platform = {"steam": 0, "psn": 0, "other": 0}
-        play_count_by_platform = {"steam": 0, "psn": 0, "other": 0}
+        games_by_platform = {"steam": 0, "psn": 0, "retroachievements": 0, "gog": 0, "other": 0}
+        achievements_by_platform = {"steam": 0, "psn": 0, "retroachievements": 0, "gog": 0, "other": 0}
+        play_count_by_platform = {"steam": 0, "psn": 0, "retroachievements": 0, "gog": 0, "other": 0}
         
         for platform_data in platform_aggregation_results:
             platform_name = platform_data.get("platform", "other")
@@ -2159,6 +2322,18 @@ def get_user_stats(
                 "play_count": play_count_by_platform["steam"],
                 "full_trophies_count": 0,
             },
+            "retroachievements": {
+                "game_count": games_by_platform["retroachievements"],
+                "earned_achievements": achievements_by_platform["retroachievements"],
+                "play_count": play_count_by_platform["retroachievements"],
+                "full_trophies_count": 0,
+            },
+            "gog": {
+                "game_count": games_by_platform["gog"],
+                "earned_achievements": achievements_by_platform["gog"],
+                "play_count": play_count_by_platform["gog"],
+                "full_trophies_count": 0,
+            },
             "other": {
                 "game_count": games_by_platform["other"],
                 "earned_achievements": achievements_by_platform["other"],
@@ -2210,6 +2385,8 @@ def get_user_stats(
             "platform_distribution": {
                 "steam": games_by_platform["steam"],
                 "psn": games_by_platform["psn"],
+                "retroachievements": games_by_platform["retroachievements"],
+                "gog": games_by_platform["gog"],
                 "other": games_by_platform["other"],
             },
             "wishlist_stats": {"total_games_in_wishlist": total_wishlist_games},
@@ -2317,6 +2494,7 @@ def get_wishlist_consoles_for_game(
 
 @app.get("/consoles/names")
 def get_console_names(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     console_ids: list[int] = Query(..., description="Lista di ID console per cui ottenere i nomi"),
     db=Depends(get_db),
 ):
@@ -2334,7 +2512,964 @@ def get_console_names(
             console_mapping[console["igdb_id"]] = console.get("platform_name", console.get("abbreviation", f"Console {console['igdb_id']}"))
         
         return {"console_names": console_mapping}
-        
+
     except Exception as e:
         logging.error(f"Error getting console names: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting console names: {str(e)}")
+
+
+@app.get("/wishlist/prices")
+def get_wishlist_prices(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    game_id: str = Query(None, description="Filtra per un singolo gioco"),
+    limit: int = Query(200, ge=1, le=1000, description="Numero massimo di snapshot per gioco"),
+):
+    """Storico prezzi e configurazione tracking per gli item in wishlist dell'utente"""
+    try:
+        match = {"user_id": str(current_user.id)}
+        if game_id:
+            match["game_id"] = game_id
+
+        items = list(db["game_user_wishlist"].find(match))
+        result = []
+        for item in items:
+            history = list(
+                db["price_history"].find(
+                    {"user_id": str(current_user.id), "game_id": item.get("game_id")},
+                    {"_id": 0, "store": 1, "price": 1, "formatted_price": 1,
+                     "currency": 1, "url": 1, "timestamp": 1},
+                )
+                .sort("timestamp", 1)
+                .limit(limit)
+            )
+            # Riepilogo: prezzo minimo per negozio dallo storico
+            latest_by_store = {}
+            for snap in history:
+                if snap.get("store") and snap.get("price") is not None:
+                    latest_by_store[snap["store"]] = snap["price"]
+
+            result.append({
+                "game_id": item.get("game_id"),
+                "price_tracking": item.get("price_tracking"),
+                "latest_price": item.get("latest_price"),
+                "latest_price_store": item.get("latest_price_store"),
+                "alert_triggered": item.get("alert_triggered"),
+                "latest_by_store": latest_by_store,
+                "history": history,
+            })
+        return {"items": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Errore nel recupero prezzi wishlist: {e}")
+
+
+@app.post("/wishlist/price-tracking")
+def set_price_tracking(
+    game_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    trovaprezzi_url: str = Query(None, description="URL feed RSS Trovaprezzi della scheda prodotto"),
+    stores: list[str] = Query(None, description="Negozi di interesse (filtro opzionale)"),
+    alert_below: float = Query(None, ge=0, description="Soglia di alert prezzo"),
+):
+    """Configura il tracking prezzi per un item della wishlist"""
+    try:
+        ObjectId(game_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="game_id non valido")
+
+    wishlist_item = db["game_user_wishlist"].find_one(
+        {"user_id": str(current_user.id), "game_id": game_id}
+    )
+    if not wishlist_item:
+        raise HTTPException(status_code=404, detail="Item non presente nella wishlist")
+
+    tracking = {
+        "trovaprezzi_url": trovaprezzi_url,
+        "stores": stores,
+        "alert_below": alert_below,
+        "updated_at": datetime.now(),
+    }
+    db["game_user_wishlist"].update_one(
+        {"user_id": str(current_user.id), "game_id": game_id},
+        {"$set": {"price_tracking": tracking}},
+    )
+    return {"message": "Price tracking configurato", "price_tracking": tracking}
+
+
+# --- Impostazioni applicative (cron tracking prezzi) ---
+DEFAULT_PRICE_TRACK_SETTINGS = {"enabled": True, "interval_minutes": 1440}
+
+
+@app.get("/settings/price-track")
+def get_price_track_settings(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    doc = db["app_settings"].find_one({"key": "price_track"}) or {}
+    last_run = doc.get("last_run")
+    return {
+        "enabled": doc.get("enabled", DEFAULT_PRICE_TRACK_SETTINGS["enabled"]),
+        "interval_minutes": doc.get("interval_minutes", DEFAULT_PRICE_TRACK_SETTINGS["interval_minutes"]),
+        "trovaprezzi_stores": doc.get("trovaprezzi_stores", []),
+        "last_run": last_run.isoformat() if isinstance(last_run, datetime) else last_run,
+    }
+
+
+@app.put("/settings/price-track")
+def update_price_track_settings(
+    enabled: bool,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    interval_minutes: int = Query(1440, ge=5, le=10080, description="Intervallo in minuti (min 5, max 7 giorni)"),
+    trovaprezzi_stores: list[str] = Query(
+        None, description="Lista globale negozi Trovaprezzi di interesse (filtro per tutti gli item)"
+    ),
+):
+    """Aggiorna le impostazioni del cronjob di tracking prezzi (leggite dal worker a ogni tick)"""
+    db["app_settings"].update_one(
+        {"key": "price_track"},
+        {
+            "$set": {
+                "enabled": enabled,
+                "interval_minutes": interval_minutes,
+                "trovaprezzi_stores": trovaprezzi_stores or [],
+                "updated_at": datetime.now(),
+            }
+        },
+        upsert=True,
+    )
+    return {
+        "message": "Impostazioni tracking prezzi aggiornate",
+        "enabled": enabled,
+        "interval_minutes": interval_minutes,
+        "trovaprezzi_stores": trovaprezzi_stores or [],
+    }
+
+
+@app.post("/settings/price-track/run")
+async def run_price_track_now(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """Avvia immediatamente un ciclo di tracking prezzi"""
+    redis = await create_pool(RedisSettings.from_dsn("redis://redis:6379"))
+    job = await redis.enqueue_job("price_track_job")
+    return {"detail": "Price tracking avviato", "job_id": job.job_id}
+
+
+@app.get("/sync/logs/{job_string_id}")
+def get_sync_logs(
+    job_string_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    limit: int = Query(500, ge=1, le=2000),
+):
+    """Log di un job di sincronizzazione (scritti dal worker su MongoDB)"""
+    # Un utente può leggere solo i log dei propri job; i job di price tracking
+    # (senza prefisso utente) sono visibili a chiunque sia autenticato
+    if not (job_string_id.startswith(f"{str(current_user.id)}_") or job_string_id.startswith("price_track_")):
+        raise HTTPException(status_code=403, detail="Non autorizzato a leggere questi log")
+
+    logs = list(
+        db["sync_logs"].find(
+            {"job_string_id": job_string_id},
+            {"_id": 0, "level": 1, "message": 1, "timestamp": 1},
+        )
+        .sort("timestamp", 1)
+        .limit(limit)
+    )
+    for entry in logs:
+        if isinstance(entry.get("timestamp"), datetime):
+            entry["timestamp"] = entry["timestamp"].isoformat()
+    return {"logs": logs}
+
+
+# --- Impostazioni: notifiche ntfy ---
+@app.get("/settings/ntfy")
+def get_ntfy_settings(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    doc = db["app_settings"].find_one({"key": "ntfy"}) or {}
+    return {
+        "enabled": doc.get("enabled", False),
+        "server_url": doc.get("server_url", "https://ntfy.sh"),
+        "topic": doc.get("topic", ""),
+        "token": doc.get("token", ""),
+        "notify_on_sync": doc.get("notify_on_sync", True),
+        "notify_on_price": doc.get("notify_on_price", True),
+    }
+
+
+@app.put("/settings/ntfy")
+def update_ntfy_settings(
+    enabled: bool,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    topic: str = Query(..., min_length=3, description="Nome della topic ntfy"),
+    server_url: str = Query("https://ntfy.sh", description="Server ntfy (ntfy.sh o self-hosted)"),
+    token: str = Query("", description="Token di accesso opzionale (topic protette)"),
+    notify_on_sync: bool = Query(True, description="Notifica quando una sync fallisce"),
+    notify_on_price: bool = Query(True, description="Notifica sugli alert prezzo"),
+):
+    db["app_settings"].update_one(
+        {"key": "ntfy"},
+        {"$set": {
+            "enabled": enabled,
+            "server_url": server_url.rstrip("/"),
+            "topic": topic,
+            "token": token,
+            "notify_on_sync": notify_on_sync,
+            "notify_on_price": notify_on_price,
+            "updated_at": datetime.now(),
+        }},
+        upsert=True,
+    )
+    return {"message": "Impostazioni notifiche salvate"}
+
+
+@app.post("/settings/ntfy/test")
+async def test_ntfy_settings(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """Invia una notifica di prova tramite la configurazione corrente"""
+    import requests
+
+    settings = db["app_settings"].find_one({"key": "ntfy"}) or {}
+    topic = settings.get("topic")
+    if not topic:
+        raise HTTPException(status_code=400, detail="Topic non configurato: inserisci prima il nome della topic")
+    server = (settings.get("server_url") or "https://ntfy.sh").rstrip("/")
+    headers = {"Title": "GamesTrack — notifica di prova", "Tags": "white_check_mark"}
+    token = settings.get("token")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        response = requests.post(
+            f"{server}/{topic}",
+            data="Se leggi questo messaggio, le notifiche sono configurate correttamente!".encode(),
+            headers=headers,
+            timeout=10,
+        )
+        response.raise_for_status()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invio fallito: {e}")
+    return {"message": "Notifica inviata: controlla l'app ntfy"}
+
+
+# --- Impostazioni: sincronizzazione automatica piattaforme ---
+@app.get("/settings/platform-sync")
+def get_platform_sync_settings(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    doc = db["app_settings"].find_one({"key": "platform_sync"}) or {}
+    last_run = doc.get("last_run")
+    return {
+        "enabled": doc.get("enabled", False),
+        "weekday": doc.get("weekday", 0),
+        "hour": doc.get("hour", 8),
+        "last_run": last_run.isoformat() if isinstance(last_run, datetime) else last_run,
+    }
+
+
+@app.put("/settings/platform-sync")
+def update_platform_sync_settings(
+    enabled: bool,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    weekday: int = Query(0, ge=0, le=6, description="Giorno della settimana (0=lunedì)"),
+    hour: int = Query(8, ge=0, le=23, description="Ora del giorno"),
+):
+    db["app_settings"].update_one(
+        {"key": "platform_sync"},
+        {"$set": {"enabled": enabled, "weekday": weekday, "hour": hour, "updated_at": datetime.now()}},
+        upsert=True,
+    )
+    return {"message": "Sincronizzazione automatica configurata", "enabled": enabled, "weekday": weekday, "hour": hour}
+
+# --- Statistiche di gioco (pagina Statistiche) ---
+@app.get("/users/statistics")
+def get_user_statistics(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """Statistiche aggregate per la pagina Statistiche: progressione trofei
+    nel tempo (dallo storico), top giochi, ripartizione piattaforme."""
+    try:
+        user_id = str(current_user.id)
+
+        # 1. Progressione trofei/ore nel tempo: per ogni giorno con snapshot,
+        # totale libreria quel giorno (cumulativo)
+        progression_pipeline = [
+            {"$match": {"user_id": user_id}},
+            {
+                "$group": {
+                    "_id": {
+                        "day": {"$dateToString": {"format": "%Y-%m-%d", "date": "$timestamp"}},
+                        "game_id": "$game_id",
+                        "platform": "$platform",
+                    },
+                    "num_trophies": {"$max": "$num_trophies"},
+                    "play_count": {"$max": "$play_count"},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$_id.day",
+                    "total_trophies": {"$sum": "$num_trophies"},
+                    "total_play_count": {"$sum": "$play_count"},
+                }
+            },
+            {"$sort": {"_id": 1}},
+        ]
+        progression_raw = list(db["trophy_history"].aggregate(progression_pipeline))
+        trophy_progression = [
+            {
+                "date": row["_id"],
+                "total_trophies": row["total_trophies"],
+                "total_play_count": row["total_play_count"],
+            }
+            for row in progression_raw
+        ]
+
+        # 2. Top 10 giochi per trofei e per ore (dalla libreria attuale)
+        top_pipeline = [
+            {"$match": {"user_id": user_id}},
+            {
+                "$group": {
+                    "_id": "$game_id",
+                    "num_trophies": {"$max": "$num_trophies"},
+                    "play_count": {"$sum": "$play_count"},
+                }
+            },
+            {"$sort": {"num_trophies": -1}},
+            {"$limit": 10},
+            {
+                "$lookup": {
+                    "from": "games",
+                    "localField": "_id",
+                    "foreignField": "_id",
+                    "as": "game",
+                }
+            },
+            {"$unwind": "$game"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "game_id": {"$toString": "$_id"},
+                    "name": "$game.name",
+                    "cover_image": "$game.cover_image",
+                    "num_trophies": 1,
+                    "play_count": 1,
+                }
+            },
+        ]
+        top_games = list(db["game_user"].aggregate(top_pipeline))
+
+        # 3. Ripartizione per piattaforma
+        platform_pipeline = [
+            {"$match": {"user_id": user_id}},
+            {
+                "$group": {
+                    "_id": "$platform",
+                    "games": {"$sum": 1},
+                    "trophies": {"$sum": {"$toInt": "$num_trophies"}},
+                    "play_count": {"$sum": {"$toInt": "$play_count"}},
+                }
+            },
+        ]
+        platform_breakdown = list(db["game_user"].aggregate(platform_pipeline))
+
+        return {
+            "trophy_progression": trophy_progression,
+            "top_games": top_games,
+            "platform_breakdown": platform_breakdown,
+        }
+    except Exception as e:
+        logging.error(f"Error getting user statistics: {e}")
+        raise HTTPException(status_code=500, detail=f"Errore nel calcolo delle statistiche: {e}")
+
+
+# --- Dedup intelligente IGDB: giochi da verificare ---
+@app.get("/games/to-verify")
+def get_games_to_verify(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Giochi con matching IGDB fallito o incerto (toVerify: true)"""
+    query = {"toVerify": True}
+    total_count = db["games"].count_documents(query)
+    games = list(
+        db["games"].find(query)
+        .sort("name", 1)
+        .skip((page - 1) * limit)
+        .limit(limit)
+    )
+    for g in games:
+        g["_id"] = str(g["_id"])
+    return {
+        "games": games,
+        "total_count": total_count,
+        "total_pages": (total_count + limit - 1) // limit,
+        "page": page,
+    }
+
+
+def _ra_badge_url(badge_url):
+    """URL completo del badge RetroAchievements"""
+    if not badge_url:
+        return ""
+    if badge_url.startswith("http"):
+        return badge_url
+    return f"https://media.retroachievements.org{badge_url}"
+
+
+def _fetch_ra_achievements(web_api_key, ra_username, ra_game_id):
+    """Lista achievement RetroAchievements per un gioco (best-effort, 10s)"""
+    if not (web_api_key and ra_username and ra_game_id):
+        return None
+    try:
+        import requests as _requests
+
+        response = _requests.get(
+            "https://api.retroachievements.org/API/API_GetGameInfoAndUserProgress.php",
+            params={"g": int(ra_game_id), "u": ra_username},
+            headers={"X-API-Key": web_api_key},
+            timeout=10,
+        )
+        response.raise_for_status()
+        data = response.json() or {}
+        raw = data.get("Achievements") or {}
+        achievements = []
+        for ach in raw.values():
+            achievements.append(
+                {
+                    "ra_id": ach.get("ID"),
+                    "name": ach.get("Title", ""),
+                    "description": ach.get("Description", ""),
+                    "badge_url": _ra_badge_url(ach.get("BadgeURL")),
+                    "points": ach.get("Points", 0),
+                    "earned": bool(ach.get("DateEarned")),
+                    "earned_hardcore": bool(ach.get("DateEarnedHardcore")),
+                    "earned_date": ach.get("DateEarned"),
+                    "display_order": ach.get("DisplayOrder", 0),
+                    "type": ach.get("type"),
+                }
+            )
+        achievements.sort(key=lambda a: (a["display_order"] or 0))
+        return achievements
+    except Exception as e:
+        logging.warning(f"RetroAchievements achievements fetch failed: {e}")
+        return None
+
+
+def _fetch_steam_achievements(steam_api_key, steam_id, app_id):
+    """Achievement Steam con stato utente (best-effort, 2 chiamate, 10s ciascuna).
+
+    Unisce GetSchemaForGame (nomi visualizzati + icone) e
+    GetPlayerAchievements (stato di completamento dell'utente).
+    """
+    if not (steam_api_key and steam_id and app_id):
+        return None
+    try:
+        import requests as _requests
+
+        schema_resp = _requests.get(
+            "https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2",
+            params={"key": steam_api_key, "appid": int(app_id)},
+            timeout=10,
+        )
+        schema_resp.raise_for_status()
+        schema = (
+            (schema_resp.json() or {})
+            .get("availableGameStats", {})
+            .get("achievements", [])
+            or []
+        )
+
+        player_resp = _requests.get(
+            "https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v1",
+            params={"key": steam_api_key, "steamid": str(steam_id), "appid": int(app_id)},
+            timeout=10,
+        )
+        player_resp.raise_for_status()
+        player_stats = (player_resp.json() or {}).get("playerstats", {}) or {}
+        achieved_map = {
+            a.get("name"): a
+            for a in (player_stats.get("achievements", []) or [])
+        }
+
+        achievements = []
+        for entry in schema:
+            api_name = entry.get("name")
+            progress = achieved_map.get(api_name, {})
+            unlock_time = progress.get("unlocktime")
+            achievements.append(
+                {
+                    "name": entry.get("displayName") or api_name,
+                    "description": entry.get("description") or "",
+                    "icon": entry.get("icon") or "",
+                    "icon_gray": entry.get("icongray") or "",
+                    "achieved": bool(progress.get("achieved")),
+                    "unlock_time": (
+                        datetime.fromtimestamp(unlock_time).strftime("%Y-%m-%d")
+                        if unlock_time
+                        else None
+                    ),
+                    "global_percent": entry.get("global_percentage"),
+                }
+            )
+        return achievements if achievements else None
+    except Exception as e:
+        logging.warning(f"Steam achievements fetch failed: {e}")
+        return None
+
+
+def _fetch_psn_trophies(npsso, np_communication_id, platform_keys=None):
+    """Lista trofei PSN con progresso utente (best-effort, 15s).
+
+    platform_keys: piattaforme PlayStation del gioco ("PS5", "PS4", "PS3", "PSVITA"),
+    provate nell'ordine dato; fallback PS5 -> PS4.
+    """
+    if not (npsso and np_communication_id):
+        return None
+
+    def _fetch():
+        from psnawp_api import PSNAWP  # lazy: psnawp non è nei requirements del backend
+        from psnawp_api.models.trophies import PlatformType
+
+        candidates = []
+        for key in platform_keys or []:
+            try:
+                candidates.append(PlatformType(key))
+            except ValueError:
+                continue
+        for fallback in (PlatformType.PS5, PlatformType.PS4):
+            if fallback not in candidates:
+                candidates.append(fallback)
+
+        client = PSNAWP(npsso)
+        last_error = None
+        for platform in candidates:
+            try:
+                iterator = client.trophies(
+                    np_communication_id,
+                    platform,
+                    include_progress=True,
+                    trophy_group_id="all",
+                    limit=None,
+                )
+                trophies = []
+                for t in iterator:
+                    earned_dt = getattr(t, "earned_date_time", None)
+                    trophies.append(
+                        {
+                            "trophy_id": getattr(t, "trophy_id", None),
+                            "name": getattr(t, "name", ""),
+                            "detail": getattr(t, "detail", ""),
+                            "type": getattr(t, "type", None),
+                            "icon_url": getattr(t, "icon_url", ""),
+                            "earned": bool(getattr(t, "earned", False)),
+                            "earned_date": earned_dt.isoformat() if earned_dt else None,
+                            "progress_value": getattr(t, "progress_value", None),
+                            "rarity": getattr(t, "rarity", None),
+                        }
+                    )
+                return trophies
+            except Exception as e:
+                last_error = e
+                continue
+        if last_error:
+            raise last_error
+        return None
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_fetch)
+            return future.result(timeout=15)
+    except FutureTimeoutError:
+        logging.warning("PSN trophies fetch timed out")
+        return None
+    except Exception as e:
+        logging.warning(f"PSN trophies fetch failed: {e}")
+        return None
+
+
+@app.get("/games/detail/{game_ref}")
+def get_game_detail(
+    game_ref: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """Pagina di dettaglio gioco: metadati IGDB, dati utente e lista trofei dove disponibile.
+
+    game_ref: igdb_id numerico oppure _id Mongo del gioco.
+    """
+    game = None
+    if game_ref.isdigit():
+        game = db["games"].find_one({"igdb_id": int(game_ref)})
+    if not game:
+        try:
+            game = db["games"].find_one({"_id": ObjectId(game_ref)})
+        except Exception:
+            game = None
+    live_metadata = None
+    if not game and game_ref.isdigit():
+        # Gioco non in catalogo (es. risultato di ricerca IGDB non ancora in libreria):
+        # metadati live da IGDB, senza toccare il database
+        try:
+            live_metadata = igdb_client.get_game_metadata("", igdb_id=int(game_ref))
+        except Exception as e:
+            logging.warning(f"IGDB live metadata fetch failed for {game_ref}: {e}")
+    if not game and not live_metadata:
+        raise HTTPException(status_code=404, detail="Gioco non trovato")
+    if live_metadata:
+        game = dict(live_metadata)  # stessi campi, ma senza _id e senza legami utente
+
+    user_id = str(current_user.id)
+
+    # --- Metadati (dal documento games, con nomi risolti) ---
+    def _as_id_list(value):
+        # Il campo può arrivare come lista di id (docs Mongo) o id singolo (metadati live)
+        if isinstance(value, (list, tuple)):
+            return [x for x in value if isinstance(x, (int, float))]
+        if isinstance(value, (int, float)):
+            return [value]
+        return []
+
+    genre_ids = _as_id_list(game.get("genres"))
+    platform_ids = _as_id_list(game.get("platforms"))
+    dev_ids = _as_id_list(game.get("developer"))
+    pub_ids = _as_id_list(game.get("publisher"))
+    mode_ids = _as_id_list(game.get("game_modes"))
+
+    genre_names = [g["genre_name"] for g in db["genres"].find({"igdb_id": {"$in": genre_ids}})]
+    platform_names = [
+        {"name": p.get("platform_name"), "abbreviation": p.get("abbreviation")}
+        for p in db["console_platforms"].find({"igdb_id": {"$in": platform_ids}})
+    ]
+    dev_names = [c["company_name"] for c in db["companies"].find({"igdb_id": {"$in": dev_ids}})]
+    pub_names = [c["company_name"] for c in db["companies"].find({"igdb_id": {"$in": pub_ids}})]
+    mode_names = [m["game_mode_name"] for m in db["game_modes"].find({"igdb_id": {"$in": mode_ids}})]
+
+    # Famiglie piattaforma del gioco (guidano quali sorgenti di trofei provare)
+    def _ps_platform_keys(platforms):
+        keys = []
+        for p in platforms:
+            name = (p.get("name") or "").upper()
+            abbr = (p.get("abbreviation") or "").upper()
+            if "PLAYSTATION 5" in name or abbr == "PS5":
+                key = "PS5"
+            elif "PLAYSTATION 4" in name or abbr == "PS4":
+                key = "PS4"
+            elif "PLAYSTATION 3" in name or abbr == "PS3":
+                key = "PS3"
+            elif "VITA" in name or abbr in ("PSVITA", "VITA"):
+                key = "PSVITA"
+            else:
+                continue
+            if key not in keys:
+                keys.append(key)
+        return keys
+
+    ps_platform_keys = _ps_platform_keys(platform_names)
+    platform_families = {
+        "playstation": bool(ps_platform_keys)
+        or any("playstation" in (p.get("name") or "").lower() for p in platform_names),
+        "steam": game.get("steam_game_id") is not None,
+        "retro": game.get("ra_game_id") is not None,
+    }
+
+    cover_image = game.get("cover_image", "")
+    screenshots = [s for s in (game.get("screenshots", []) or []) if s]
+    artworks = [a for a in (game.get("artworks", []) or []) if a]
+
+    def _https_url(u):
+        if not u:
+            return ""
+        return u if u.startswith("http") else f"https:{u}"
+
+    release_date = game.get("release_date")
+    if isinstance(release_date, datetime):
+        release_date = release_date.strftime("%Y-%m-%d")
+    elif isinstance(release_date, (int, float)) and release_date:
+        # epoch (metadati live da IGDB: first_release_date)
+        try:
+            release_date = datetime.fromtimestamp(release_date).strftime("%Y-%m-%d")
+        except (ValueError, OSError, OverflowError):
+            release_date = None
+    release_year = None
+    if release_date:
+        release_year = str(release_date)[:4]
+
+    detail = {
+        "igdb_id": game.get("igdb_id"),
+        "name": game.get("name", ""),
+        "original_name": game.get("original_name"),
+        "description": game.get("description") or game.get("summary") or "",
+        "cover_image": _https_url(cover_image) if cover_image else "",
+        "screenshots": [_https_url(s) for s in screenshots],
+        "artworks": [_https_url(a) for a in artworks],
+        "release_date": release_date,
+        "release_year": release_year,
+        "total_rating": game.get("total_rating"),
+        "total_rating_count": game.get("total_rating_count"),
+        "aggregated_rating": game.get("aggregated_rating"),
+        "genres": genre_names,
+        "platforms": platform_names,
+        "developers": dev_names,
+        "publishers": pub_names,
+        "game_modes": mode_names,
+        "external_ids": {
+            "steam_game_id": game.get("steam_game_id"),
+            "psn_game_id": game.get("psn_game_id"),
+            "gog_game_id": game.get("gog_game_id"),
+            "ra_game_id": game.get("ra_game_id"),
+        },
+        "videos": [v.get("video_id") for v in (game.get("videos", []) or []) if isinstance(v, dict)][:3],
+    }
+
+    # --- Voci libreria dell'utente per questo gioco ---
+    game_mongo_id = game.get("_id")
+    entries = []
+    if game_mongo_id:
+        for eu in db["game_user"].find(
+            {"user_id": user_id, "game_id": {"$in": [game_mongo_id, str(game_mongo_id)]}}
+        ):
+            console_doc = db["console_platforms"].find_one({"igdb_id": eu.get("console")})
+            play_count = eu.get("play_count")
+            try:
+                play_count = int(play_count) if play_count is not None else 0
+            except (TypeError, ValueError):
+                play_count = 0
+            entries.append(
+                {
+                    "platform": eu.get("platform"),
+                    "console": eu.get("console"),
+                    "console_name": console_doc.get("platform_name") if console_doc else None,
+                    "num_trophies": eu.get("num_trophies", 0),
+                    "play_count": play_count,
+                    "play_hours": round(play_count / 60, 1),
+                    "source": eu.get("source", "unknown"),
+                }
+            )
+        for wu in db["game_user_wishlist"].find(
+            {"user_id": user_id, "game_id": str(game_mongo_id)}
+        ):
+            entries.append(
+                {
+                    "platform": "wishlist",
+                    "console": wu.get("console"),
+                    "console_name": None,
+                    "source": "wishlist",
+                }
+            )
+    detail["library_entries"] = entries
+
+    # --- Trofei e achievement per famiglia piattaforma ---
+    # La collection trophy_lists è popolata dalla sincronizzazione (worker);
+    # il dettaglio la legge qui e, se mancante o più vecchia di 7 giorni,
+    # recupera live dalla piattaforma e aggiorna il documento.
+    TROPHY_LIST_MAX_AGE = 7 * 24 * 3600
+    trophies = None
+    achievements = None  # RetroAchievements
+    steam_achievements = None
+    psn_status = "not_applicable"
+    steam_status = "not_applicable"
+    ra_status = "not_applicable"
+    synced_at = []
+
+    def _trophy_doc(platform):
+        if game_mongo_id is None:
+            return None, False
+        doc = db["trophy_lists"].find_one(
+            {"user_id": user_id, "platform": platform, "game_id": game_mongo_id}
+        )
+        if not doc:
+            return None, False
+        fetched_at = doc.get("fetched_at")
+        fresh = bool(
+            fetched_at
+            and (datetime.now() - fetched_at).total_seconds() < TROPHY_LIST_MAX_AGE
+        )
+        return doc, fresh
+
+    def _store_trophy_doc(platform, data):
+        if game_mongo_id is None or data is None:
+            return
+        try:
+            db["trophy_lists"].update_one(
+                {"user_id": user_id, "platform": platform, "game_id": game_mongo_id},
+                {
+                    "$set": {
+                        "user_id": user_id,
+                        "platform": platform,
+                        "game_id": game_mongo_id,
+                        "trophies": data,
+                        "source": "detail",
+                        "fetched_at": datetime.now(),
+                    }
+                },
+                upsert=True,
+            )
+        except Exception as e:
+            logging.warning(f"Trophy list store failed: {e}")
+
+    # PlayStation (PS3 in poi): trofei da PSN
+    if platform_families["playstation"] or game.get("np_communication_id"):
+        doc, fresh = _trophy_doc("psn")
+        if fresh:
+            trophies = doc.get("trophies")
+            psn_status = "ok" if trophies is not None else "failed"
+            if doc.get("fetched_at"):
+                synced_at.append(doc["fetched_at"])
+        else:
+            psn_link = db["platforms-users"].find_one({"user_id": user_id, "platform": "psn"})
+            np_communication_id = game.get("np_communication_id")
+            if not psn_link:
+                psn_status = "not_linked"
+            elif not np_communication_id:
+                psn_status = "no_trophy_data"
+            else:
+                try:
+                    npsso = decrypt_value(psn_link.get("api_key"))
+                except Exception as e:
+                    npsso = None
+                    psn_status = "not_linked"
+                    logging.warning(f"Cannot decrypt PSN credentials: {e}")
+                if npsso:
+                    trophies = _fetch_psn_trophies(
+                        npsso, np_communication_id, ps_platform_keys
+                    )
+                    psn_status = "ok" if trophies is not None else "failed"
+                    _store_trophy_doc("psn", trophies)
+                    if trophies is not None:
+                        synced_at.append(datetime.now())
+
+    # Steam: achievement da Steam Web API
+    steam_game_id = game.get("steam_game_id")
+    if steam_game_id is not None:
+        doc, fresh = _trophy_doc("steam")
+        if fresh:
+            steam_achievements = doc.get("trophies")
+            steam_status = "ok" if steam_achievements is not None else "no_achievements"
+            if doc.get("fetched_at"):
+                synced_at.append(doc["fetched_at"])
+        else:
+            steam_link = db["platforms-users"].find_one({"user_id": user_id, "platform": "steam"})
+            if not steam_link:
+                steam_status = "not_linked"
+            else:
+                try:
+                    steam_api_key = decrypt_value(steam_link.get("api_key"))
+                except Exception as e:
+                    steam_api_key = None
+                    steam_status = "not_linked"
+                    logging.warning(f"Cannot decrypt Steam credentials: {e}")
+                steam_id = steam_link.get("platform_id")
+                if steam_api_key and steam_id:
+                    steam_achievements = _fetch_steam_achievements(
+                        steam_api_key, steam_id, steam_game_id
+                    )
+                    steam_status = (
+                        "ok" if steam_achievements is not None else "no_achievements"
+                    )
+                    _store_trophy_doc("steam", steam_achievements)
+                    if steam_achievements is not None:
+                        synced_at.append(datetime.now())
+
+    # RetroAchievements
+    ra_game_id = game.get("ra_game_id")
+    if ra_game_id is not None:
+        doc, fresh = _trophy_doc("ra")
+        if fresh:
+            achievements = doc.get("trophies")
+            ra_status = "ok" if achievements is not None else "no_achievements"
+            if doc.get("fetched_at"):
+                synced_at.append(doc["fetched_at"])
+        else:
+            ra_link = db["platforms-users"].find_one(
+                {"user_id": user_id, "platform": "retroachievements"}
+            )
+            if not ra_link:
+                ra_status = "not_linked"
+            else:
+                try:
+                    ra_api_key = decrypt_value(ra_link.get("api_key"))
+                except Exception as e:
+                    ra_api_key = None
+                    ra_status = "not_linked"
+                    logging.warning(f"Cannot decrypt RetroAchievements credentials: {e}")
+                if ra_api_key:
+                    achievements = _fetch_ra_achievements(
+                        ra_api_key, ra_link.get("platform_id"), ra_game_id
+                    )
+                    ra_status = "ok" if achievements is not None else "no_achievements"
+                    _store_trophy_doc("ra", achievements)
+                    if achievements is not None:
+                        synced_at.append(datetime.now())
+
+    trophy_synced_at = max(synced_at) if synced_at else None
+
+    detail["trophies"] = trophies
+    detail["achievements"] = achievements
+    detail["steam_achievements"] = steam_achievements
+    detail["platform_families"] = platform_families
+    detail["psn_status"] = psn_status
+    detail["steam_status"] = steam_status
+    detail["ra_status"] = ra_status
+    detail["trophy_synced_at"] = (
+        trophy_synced_at.isoformat() if trophy_synced_at else None
+    )
+
+    return detail
+
+
+@app.post("/games/resolve-verify")
+def resolve_verify_game(
+    game_id: str,
+    igdb_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db=Depends(get_db),
+):
+    """Risolve un gioco 'da verificare' con i metadati IGDB scelti dall'utente"""
+    game = db["games"].find_one({"_id": ObjectId(game_id)})
+    if not game:
+        raise HTTPException(status_code=404, detail="Gioco non trovato")
+
+    metadata = igdb_client.get_game_metadata(
+        game.get("original_name") or game.get("name", ""), igdb_id=igdb_id
+    )
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Metadati IGDB non trovati per questo gioco")
+
+    update = {
+        "name": metadata.get("name") or game.get("name"),
+        "platforms": metadata.get("platforms", game.get("platforms", [])),
+        "genres": metadata.get("genres", game.get("genres", [])),
+        "game_modes": metadata.get("game_modes", game.get("game_modes", [])),
+        "release_date": metadata.get("release_date", game.get("release_date")),
+        "publisher": metadata.get("publisher", game.get("publisher")),
+        "developer": metadata.get("developer", game.get("developer")),
+        "description": metadata.get("description", game.get("description")),
+        "cover_image": metadata.get("cover_image", game.get("cover_image")),
+        "screenshots": metadata.get("screenshots", game.get("screenshots", [])),
+        "total_rating": metadata.get("total_rating", game.get("total_rating", 0.0)),
+        "total_rating_count": metadata.get("total_rating_count", game.get("total_rating_count", 0)),
+        "igdb_id": metadata.get("igdb_id", igdb_id),
+        "normalized_name": " ".join(
+            (metadata.get("name") or game.get("name", "")).lower()
+            .translate(str.maketrans("", "", string.punctuation))
+            .split()
+        ),
+        "toVerify": False,
+    }
+    db["games"].update_one({"_id": ObjectId(game_id)}, {"$set": update})
+    return {"message": "Gioco verificato e aggiornato", "name": update["name"]}

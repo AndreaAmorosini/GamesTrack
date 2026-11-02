@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Illustrazione: controller e trofeo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eef2ff"/>
+      <stop offset="1" stop-color="#e0e7ff"/>
+    </linearGradient>
+    <linearGradient id="pad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6d28d9"/>
+      <stop offset="1" stop-color="#4c1d95"/>
+    </linearGradient>
+    <linearGradient id="cup" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="600" fill="url(#bg)"/>
+
+  <!-- aloni decorativi -->
+  <circle cx="620" cy="140" r="140" fill="#c4b5fd" opacity="0.35"/>
+  <circle cx="140" cy="470" r="110" fill="#a5b4fc" opacity="0.30"/>
+
+  <!-- pixel fluttuanti -->
+  <g fill="#7c3aed" opacity="0.55">
+    <rect x="90" y="90" width="18" height="18" rx="3"/>
+    <rect x="130" y="60" width="12" height="12" rx="2"/>
+    <rect x="660" y="420" width="16" height="16" rx="3"/>
+    <rect x="700" y="460" width="10" height="10" rx="2"/>
+    <rect x="620" y="500" width="12" height="12" rx="2"/>
+  </g>
+  <g fill="#4f46e5" opacity="0.45">
+    <circle cx="200" cy="150" r="6"/>
+    <circle cx="680" cy="90" r="8"/>
+    <circle cx="90" cy="300" r="5"/>
+  </g>
+
+  <!-- trofeo -->
+  <g transform="translate(560,150)">
+    <path d="M60 40 h80 v18 c0 40 -18 68 -40 76 c-22 -8 -40 -36 -40 -76 z" fill="url(#cup)"/>
+    <path d="M60 46 h-26 c-2 26 8 44 30 50" fill="none" stroke="#d97706" stroke-width="10" stroke-linecap="round"/>
+    <path d="M140 46 h26 c2 26 -8 44 -30 50" fill="none" stroke="#d97706" stroke-width="10" stroke-linecap="round"/>
+    <rect x="88" y="132" width="24" height="26" fill="#d97706"/>
+    <rect x="66" y="158" width="68" height="14" rx="4" fill="#b45309"/>
+    <path d="M78 58 l10 12 l24 -26" fill="none" stroke="#fffbeb" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- gamepad -->
+  <g transform="translate(110,260)">
+    <path d="M120 40
+             C 90 -10, 10 10, 22 90
+             C 28 135, 40 190, 74 205
+             C 100 216, 112 190, 122 168
+             L 132 148
+             L 208 148
+             L 218 168
+             C 228 190, 240 216, 266 205
+             C 300 190, 312 135, 318 90
+             C 330 10, 250 -10, 220 40
+             C 205 62, 135 62, 120 40 Z"
+          fill="url(#pad)"/>
+    <!-- d-pad -->
+    <g fill="#ede9fe">
+      <rect x="62" y="76" width="26" height="76" rx="6"/>
+      <rect x="37" y="101" width="76" height="26" rx="6"/>
+    </g>
+    <!-- pulsanti -->
+    <circle cx="262" cy="84" r="13" fill="#fbbf24"/>
+    <circle cx="292" cy="114" r="13" fill="#34d399"/>
+    <circle cx="232" cy="114" r="13" fill="#f87171"/>
+    <circle cx="262" cy="144" r="13" fill="#60a5fa"/>
+    <!-- stick -->
+    <circle cx="150" cy="150" r="17" fill="#312e81"/>
+    <circle cx="150" cy="150" r="10" fill="#c4b5fd"/>
+    <circle cx="198" cy="150" r="17" fill="#312e81"/>
+    <circle cx="198" cy="150" r="10" fill="#c4b5fd"/>
+    <!-- spie -->
+    <circle cx="170" cy="34" r="4" fill="#a7f3d0"/>
+    <circle cx="190" cy="34" r="4" fill="#fbcfe8" opacity="0.9"/>
+  </g>
+
+  <!-- cartuccia / scheda -->
+  <g transform="translate(60,120) rotate(-8)">
+    <rect x="0" y="0" width="90" height="110" rx="8" fill="#4338ca"/>
+    <rect x="14" y="16" width="62" height="40" rx="4" fill="#c7d2fe"/>
+    <rect x="14" y="70" width="62" height="8" rx="3" fill="#a5b4fc"/>
+    <rect x="14" y="86" width="40" height="8" rx="3" fill="#a5b4fc"/>
+  </g>
+</svg>

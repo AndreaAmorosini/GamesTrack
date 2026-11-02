@@ -1,5 +1,3 @@
-# Use root/example as user/password credentials
-
 services:
 
   mongo:
@@ -8,8 +6,8 @@ services:
     ports:
       - 27017:27017
     environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: root
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASS:-root}
     networks:
       - gametrack
     volumes:
@@ -22,9 +20,9 @@ services:
     ports:
       - 8081:8081
     environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: root
-      ME_CONFIG_MONGODB_ADMINPASSWORD: root
-      ME_CONFIG_MONGODB_URL: mongodb://root:root@mongo:27017/
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER:-root}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASS:-root}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-root}:${MONGO_PASS:-root}@mongo:27017/
       ME_CONFIG_BASICAUTH: false
     networks:
       - gametrack
@@ -36,10 +34,13 @@ services:
     depends_on:
       - mongo
     environment:
-      MONGO_INIT_USER: root
-      MONGO_INIT_PASS: root
+      MONGO_INIT_USER: ${MONGO_USER:-root}
+      MONGO_INIT_PASS: ${MONGO_PASS:-root}
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
     ports:
       - "8000:8000"
     networks:
@@ -64,14 +65,13 @@ services:
       - redis
     environment:
       PYTHONUNBUFFERED: 1
-      MONGO_INIT_USER: root
-      MONGO_INIT_PASS: root
+      MONGO_INIT_USER: ${MONGO_USER:-root}
+      MONGO_INIT_PASS: ${MONGO_PASS:-root}
       IGDB_CLIENT_ID: ${IGDB_CLIENT_ID}
       IGDB_CLIENT_SECRET: ${IGDB_CLIENT_SECRET}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
     networks:
       - gametrack
-    volumes:
-      - ./backend:/app
 
 
   frontend:
@@ -87,7 +87,6 @@ services:
       - gametrack
     environment:
       - NODE_ENV=production
-      - REACT_APP_API_URL=http://localhost:8000
 
 volumes:
   mongo_data:

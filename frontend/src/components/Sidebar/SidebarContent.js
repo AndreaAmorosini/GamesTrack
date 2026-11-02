@@ -3,19 +3,36 @@ import routes from '../../routes/sidebar'
 import { NavLink, Route } from 'react-router-dom'
 import * as Icons from '../../icons'
 import SidebarSubmenu from './SidebarSubmenu'
-import { Button } from '@windmill/react-ui'
+import { Badge } from '@windmill/react-ui'
+import { useSync } from '../../context/SyncContext'
 
 function Icon({ icon, ...props }) {
   const Icon = Icons[icon]
   return <Icon {...props} />
 }
 
+/** Badge del sidebar per la wishlist: conteggio item + alert prezzi attivi */
+function WishlistBadges() {
+  const { stats } = useSync()
+  if (!stats || (stats.wishlistCount === 0 && stats.priceAlerts === 0)) return null
+  return (
+    <span className="absolute right-6 flex items-center gap-1" aria-hidden="true">
+      {stats.priceAlerts > 0 && (
+        <Badge type="danger">{stats.priceAlerts}</Badge>
+      )}
+      {stats.wishlistCount > 0 && (
+        <Badge type="neutral">{stats.wishlistCount}</Badge>
+      )}
+    </span>
+  )
+}
+
 function SidebarContent() {
   return (
     <div className="py-4 text-gray-500 dark:text-gray-400">
-      <a className="ml-6 text-lg font-bold text-gray-800 dark:text-gray-200" href="#">
+      <span className="ml-6 text-lg font-bold text-gray-800 dark:text-gray-200">
         GamesTrack
-      </a>
+      </span>
       <ul className="mt-6">
         {routes.map((route) =>
           route.routes ? (
@@ -36,6 +53,8 @@ function SidebarContent() {
                 </Route>
                 <Icon className="w-5 h-5" aria-hidden="true" icon={route.icon} />
                 <span className="ml-4">{route.name}</span>
+                {/* Badge per la wishlist: conteggio item e alert prezzi attivi */}
+                {route.path === '/app/wishlist' && <WishlistBadges />}
               </NavLink>
             </li>
           )

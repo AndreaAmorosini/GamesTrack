@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react'
-import CTA from '../components/CTA'
 import InfoCard from '../components/Cards/InfoCard'
 import ChartCard from '../components/Chart/ChartCard'
 import { Doughnut, Line } from 'react-chartjs-2'
@@ -7,17 +6,13 @@ import ChartLegend from '../components/Chart/ChartLegend'
 import PageTitle from '../components/Typography/PageTitle'
 import RoundIcon from '../components/RoundIcon'
 import { getUserDashboard, searchIGDBGames, addGameToWishlist, addGameToLibrary, getLibraryConsolesForGame, getWishlistConsolesForGame, getConsoleNames } from '../services/api'
+import GameNameLink from '../components/GameNameLink'
 import { 
   GamesIcon, 
   HeartIcon, 
-  TrophyIcon, 
+  TrophyIcon,
   ClockIcon,
-  CartIcon,
-  MoneyIcon,
-  PeopleIcon,
-  ChatIcon,
-  SearchIcon,
-  FilterIcon
+  SearchIcon
 } from '../icons'
 import {
   TableBody,
@@ -26,10 +21,8 @@ import {
   TableHeader,
   TableCell,
   TableRow,
-  TableFooter,
   Badge,
   Input,
-  Select,
   Button,
   Modal,
   ModalHeader,
@@ -47,7 +40,7 @@ function Dashboard() {
   const [searchResults, setSearchResults] = useState([])
   const [isSearching, setIsSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
-  const [page, setPage] = useState(1)
+  const [page] = useState(1)
   const [resultsPerPage] = useState(10)
   
   // Stati per la modal di selezione console
@@ -266,14 +259,14 @@ function Dashboard() {
     data: {
       datasets: [
         {
-          data: dashboardData?.platform_distribution 
-            ? [dashboardData.platform_distribution.steam, dashboardData.platform_distribution.psn, dashboardData.platform_distribution.other]
-            : [0, 0, 0],
-          backgroundColor: ['#0694a2', '#1c64f2', '#7e3af2'],
+          data: dashboardData?.platform_distribution
+            ? [dashboardData.platform_distribution.steam, dashboardData.platform_distribution.psn, dashboardData.platform_distribution.retroachievements, dashboardData.platform_distribution.gog, dashboardData.platform_distribution.other]
+            : [0, 0, 0, 0, 0],
+          backgroundColor: ['#0694a2', '#1c64f2', '#e3a008', '#d64794', '#7e3af2'],
           label: 'Giochi',
         },
       ],
-      labels: ['Steam', 'PlayStation Network', 'Altri'],
+      labels: ['Steam', 'PlayStation Network', 'RetroAchievements', 'GOG', 'Altri'],
     },
     options: {
       responsive: true,
@@ -287,7 +280,7 @@ function Dashboard() {
   // Dati per il grafico a linee delle statistiche nel tempo
   const lineOptions = {
     data: {
-      labels: dashboardData?.platform_stats_summary?.map(p => p.platform === 'steam' ? 'Steam' : p.platform === 'psn' ? 'PSN' : p.platform) || [],
+      labels: dashboardData?.platform_stats_summary?.map(p => p.platform === 'steam' ? 'Steam' : p.platform === 'psn' ? 'PSN' : p.platform === 'retroachievements' ? 'RetroAchievements' : p.platform === 'gog' ? 'GOG' : p.platform) || [],
       datasets: [
         {
           label: 'Giochi',
@@ -392,6 +385,8 @@ function Dashboard() {
           <ChartLegend legends={[
             { title: 'Steam', color: 'bg-teal-500' },
             { title: 'PlayStation Network', color: 'bg-blue-500' },
+            { title: 'RetroAchievements', color: 'bg-yellow-500' },
+            { title: 'GOG', color: 'bg-pink-500' },
             { title: 'Altri', color: 'bg-purple-500' },
           ]} />
         </ChartCard>
@@ -422,8 +417,10 @@ function Dashboard() {
               <TableRow key={i}>
                 <TableCell>
                   <span className="font-semibold">
-                    {platform.platform === 'steam' ? 'Steam' : 
-                     platform.platform === 'psn' ? 'PlayStation Network' : 
+                    {platform.platform === 'steam' ? 'Steam' :
+                     platform.platform === 'psn' ? 'PlayStation Network' :
+                     platform.platform === 'retroachievements' ? 'RetroAchievements' :
+                     platform.platform === 'gog' ? 'GOG' :
                      platform.platform}
                   </span>
                 </TableCell>
@@ -549,7 +546,7 @@ function Dashboard() {
                           }}
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold truncate">{game.name}</p>
+                          <GameNameLink name={game.name} gameId={game.igdb_id} className="truncate block" />
                           {game.original_name && game.original_name !== game.name && (
                             <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                               {game.original_name}

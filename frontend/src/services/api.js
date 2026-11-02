@@ -1,11 +1,22 @@
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// URL dell'API: si può forzare con REACT_APP_API_URL (usato in build);
+// di default punta alla porta 8000 dello stesso host da cui si apre l'app,
+// così funziona invariato su localhost, IP Tailscale o hostname Tailscale.
+const API_URL = process.env.REACT_APP_API_URL || `${window.location.protocol}//${window.location.hostname}:8000`;
+
+// Flag di modulo: solo il primo 401 può avviare il redirect, evita i loop
+// quando più chiamate falliscono insieme (e su /login, dove nessun redirect serve)
+let authRedirectPending = false;
 
 // Funzione per gestire gli errori di autenticazione
 const handleAuthError = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    // Forza il reindirizzamento immediato
-    window.location.replace('/login');
+    const path = window.location.pathname;
+    if (!authRedirectPending && path !== '/login' && path !== '/create-account' && path !== '/forgot-password') {
+        authRedirectPending = true;
+        // Forza il reindirizzamento immediato
+        window.location.replace('/login');
+    }
     throw new Error('Sessione scaduta');
 };
 
@@ -119,6 +130,10 @@ export const updateUserProfile = async (userData) => {
             steam_api_key: userData.steam_api_key || undefined,
             psn: userData.psn || undefined,
             psn_api_key: userData.psn_api_key || undefined,
+            ra: userData.ra || undefined,
+            ra_api_key: userData.ra_api_key || undefined,
+            gog: userData.gog || undefined,
+            gog_password: userData.gog_password || undefined,
             metadata_api_key: userData.metadata_api_key || undefined
         };
 
@@ -259,6 +274,134 @@ export const syncPlatform = async (platform) => {
         return handleResponse(response);
     } catch (error) {
         console.error('Sync platform error:', error);
+        throw error;
+    }
+};
+
+// Funzione per ottenere storico prezzi e configurazione tracking della wishlist
+export const getWishlistPrices = async (gameId = null) => {
+    try {
+        const queryParams = new URLSearchParams();
+        if (gameId) {
+            queryParams.append('game_id', gameId);
+        }
+        const response = await fetch(`${API_URL}/wishlist/prices?${queryParams}`, {
+            headers: {
+                'Authorization': getAuthHeader(),
+                'Accept': 'application/json'
+            },
+        });
+
+        return handleResponse(response);
+    } catch (error) {
+        console.error('Get wishlist prices error:', error);
+        throw error;
+    }
+};
+
+// Funzione per configurare il tracking prezzi di un item della wishlist
+export const setWishlistPriceTracking = async (gameId, config = {}) => {
+    try {
+        const queryParams = new URLSearchParams();
+        queryParams.append('game_id', gameId);
+        if (config.trovaprezzi_url) {
+            queryParams.append('trovaprezzi_url', config.trovaprezzi_url);
+        }
+        if (config.stores && config.stores.length > 0) {
+            config.stores.forEach(store => queryParams.append('stores', store));
+        }
+        if (config.alert_below !== undefined && config.alert_below !== null && config.alert_below !== '') {
+            queryParams.append('alert_below', config.alert_below);
+        }
+
+        const response = await fetch(`${API_URL}/wishlist/price-tracking?${queryParams}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': getAuthHeader(),
+                'Content-Type': 'application/json',
+            }
+        });
+
+        return handleResponse(response);
+    } catch (error) {
+        console.error('Set wishlist price tracking error:', error);
+        throw error;
+    }
+};
+
+// Log di un job di sincronizzazione
+export const getSyncLogs = async (jobStringId) => {
+    try {
+        const response = await fetch(`${API_URL}/sync/logs/${jobStringId}`, {
+            headers: {
+                'Authorization': getAuthHeader(),
+                'Accept': 'application/json'
+            },
+        });
+
+        return handleResponse(response);
+    } catch (error) {
+        console.error('Get sync logs error:', error);
+        throw error;
+    }
+};
+
+// Impostazioni del cronjob di tracking prezzi
+export const getPriceTrackSettings = async () => {
+    try {
+        const response = await fetch(`${API_URL}/settings/price-track`, {
+            headers: {
+                'Authorization': getAuthHeader(),
+                'Accept': 'application/json'
+            },
+        });
+
+        return handleResponse(response);
+    } catch (error) {
+        console.error('Get price track settings error:', error);
+        throw error;
+    }
+};
+
+export const updatePriceTrackSettings = async ({ enabled, interval_minutes, trovaprezzi_stores = [] }) => {
+    try {
+        const queryParams = new URLSearchParams({
+            enabled: String(enabled),
+            interval_minutes: String(interval_minutes)
+        });
+        trovaprezzi_stores.forEach(store => {
+            if (store) queryParams.append('trovaprezzi_stores', store);
+        });
+
+        const response = await fetch(`${API_URL}/settings/price-track?${queryParams}`, {
+            method: 'PUT',
+            headers: {
+                'Authorization': getAuthHeader(),
+                'Content-Type': 'application/json',
+            }
+        });
+
+        return handleResponse(response);
+    } catch (error) {
+        console.error('Update price track settings error:', error);
+        throw error;
+    }
+};
+
+// Avvia immediatamente un ciclo di tracking prezzi
+export const runPriceTrackNow = async () => {
+    try {
+        const response = await fetch(`${API_URL}/settings/price-track/run`, {
+            method: 'POST',
+            headers: {
+                'Authorization': getAuthHeader(),
+                'Content-Type': 'application/json',
+            }
+        });
+
+        return handleResponse(response);
+    } catch (error) {
+        console.error('Run price track error:', error);
         throw error;
     }
 };
@@ -661,4 +804,134 @@ export const updateGameMetadata = async (gameId, igdbId) => {
   }
 };
 
- 
+ // Impostazioni notifiche ntfy
+export const getNtfySettings = async () => {
+  try {
+    const response = await fetch(`${API_URL}/settings/ntfy`, {
+      headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json' },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Get ntfy settings error:', error);
+    throw error;
+  }
+};
+
+export const updateNtfySettings = async (config) => {
+  try {
+    const queryParams = new URLSearchParams({
+      enabled: String(config.enabled),
+      topic: config.topic,
+      server_url: config.server_url || 'https://ntfy.sh',
+      token: config.token || '',
+      notify_on_sync: String(config.notify_on_sync !== false),
+      notify_on_price: String(config.notify_on_price !== false)
+    });
+    const response = await fetch(`${API_URL}/settings/ntfy?${queryParams}`, {
+      method: 'PUT',
+      headers: { 'Authorization': getAuthHeader(), 'Content-Type': 'application/json' },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Update ntfy settings error:', error);
+    throw error;
+  }
+};
+
+export const testNtfySettings = async () => {
+  try {
+    const response = await fetch(`${API_URL}/settings/ntfy/test`, {
+      method: 'POST',
+      headers: { 'Authorization': getAuthHeader(), 'Content-Type': 'application/json' },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Test ntfy error:', error);
+    throw error;
+  }
+};
+
+// Impostazioni sincronizzazione automatica piattaforme
+export const getPlatformSyncSettings = async () => {
+  try {
+    const response = await fetch(`${API_URL}/settings/platform-sync`, {
+      headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json' },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Get platform sync settings error:', error);
+    throw error;
+  }
+};
+
+export const updatePlatformSyncSettings = async (config) => {
+  try {
+    const queryParams = new URLSearchParams({
+      enabled: String(config.enabled),
+      weekday: String(config.weekday),
+      hour: String(config.hour)
+    });
+    const response = await fetch(`${API_URL}/settings/platform-sync?${queryParams}`, {
+      method: 'PUT',
+      headers: { 'Authorization': getAuthHeader(), 'Content-Type': 'application/json' },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Update platform sync settings error:', error);
+    throw error;
+  }
+};
+
+// Statistiche di gioco
+export const getUserStatistics = async () => {
+  try {
+    const response = await fetch(`${API_URL}/users/statistics`, {
+      headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json' },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Get user statistics error:', error);
+    throw error;
+  }
+};
+
+// Giochi da verificare (dedup IGDB)
+export const getGamesToVerify = async (page = 1) => {
+  try {
+    const response = await fetch(`${API_URL}/games/to-verify?page=${page}`, {
+      headers: { 'Authorization': getAuthHeader(), 'Accept': 'application/json' },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Get games to verify error:', error);
+    throw error;
+  }
+};
+
+export const resolveVerifyGame = async (gameId, igdbId) => {
+  try {
+    const response = await fetch(`${API_URL}/games/resolve-verify?game_id=${gameId}&igdb_id=${igdbId}`, {
+      method: 'POST',
+      headers: { 'Authorization': getAuthHeader(), 'Content-Type': 'application/json' },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Resolve verify game error:', error);
+    throw error;
+  }
+};
+
+export const getGameDetail = async (gameRef) => {
+  try {
+    const response = await fetch(`${API_URL}/games/detail/${gameRef}`, {
+      headers: {
+        'Authorization': getAuthHeader(),
+        'Accept': 'application/json'
+      },
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error('Get game detail error:', error);
+    throw error;
+  }
+};

@@ -2,19 +2,23 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import jwt
+import os
+import secrets
 from fastapi import Depends, FastAPI, HTTPException, status, APIRouter
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from utils.db import get_db
+from utils.crypto import decrypt_value
 from bson import ObjectId
 
-#Script per generare una chiave segreta sicura che può essere usata per firmare i token JWT.
-
-# to get a string like this run:
-# openssl rand -hex 32
-SECRET_KEY = "7e333f93fa30e9ece2038769a4a84c3f0bf6360d9e74e603cf0cbd8155a4b79d"
+# Chiave per firmare i token JWT: da variabile d'ambiente JWT_SECRET_KEY.
+# Per generarne una: openssl rand -hex 32
+# Se non configurata viene generata casualmente all'avvio (i token esistenti
+# vengono invalidati a ogni riavvio del backend: configurare la variabile
+# per mantenere le sessioni tra i riavvii).
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or secrets.token_hex(32)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 10080 #7 Days
 
@@ -33,11 +37,15 @@ class User(BaseModel):
     username: str
     email: str | None = None
     password: str | None = None
-    # piattaforme                         Luigi 
+    # piattaforme                         Luigi
     steam: str | None = None
     steam_api_key: str | None = None
     psn: str | None = None
     psn_api_key: str | None = None
+    ra: str | None = None  # username RetroAchievements
+    ra_api_key: str | None = None  # Web API Key RetroAchievements
+    gog: str | None = None  # username/email GOG
+    gog_password: str | None = None  # password GOG
     metadata_api_key: str | None = None
 
 
@@ -63,6 +71,7 @@ def get_user(db, username: str):
     user_doc = db.users.find_one({"username": username})
     if user_doc:
         # Recupera le informazioni delle piattaforme                  Luigi
+        # (le api_key sono cifrate a riposo: si decifrano per il profilo)
         steam_platform = db["platforms-users"].find_one({"user_id": str(user_doc["_id"]), "platform": "steam"})
         psn_platform = db["platforms-users"].find_one({"user_id": str(user_doc["_id"]), "platform": "psn"})
         
@@ -70,10 +79,18 @@ def get_user(db, username: str):
         user_doc["id"] = str(user_doc["_id"])
         if steam_platform:
             user_doc["steam"] = steam_platform.get("platform_id")
-            user_doc["steam_api_key"] = steam_platform.get("api_key")
+            user_doc["steam_api_key"] = decrypt_value(steam_platform.get("api_key"))
         if psn_platform:
             user_doc["psn"] = psn_platform.get("platform_id")
-            user_doc["psn_api_key"] = psn_platform.get("api_key")
+            user_doc["psn_api_key"] = decrypt_value(psn_platform.get("api_key"))
+        ra_platform = db["platforms-users"].find_one({"user_id": str(user_doc["_id"]), "platform": "retroachievements"})
+        if ra_platform:
+            user_doc["ra"] = ra_platform.get("platform_id")
+            user_doc["ra_api_key"] = decrypt_value(ra_platform.get("api_key"))
+        gog_platform = db["platforms-users"].find_one({"user_id": str(user_doc["_id"]), "platform": "gog"})
+        if gog_platform:
+            user_doc["gog"] = gog_platform.get("platform_id")
+            user_doc["gog_password"] = decrypt_value(gog_platform.get("api_key"))
             
         return UserInDB(**user_doc)
 

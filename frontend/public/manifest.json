@@ -1,6 +1,7 @@
 {
-  "short_name": "Windmill",
-  "name": "Windmill Dashboard React",
+  "short_name": "GamesTrack",
+  "name": "GamesTrack",
+  "description": "Gestione della libreria di videogiochi con sincronizzazione Steam, PSN, RetroAchievements e GOG, wishlist e tracking prezzi",
   "icons": [
     {
       "src": "favicon.ico",
@@ -16,10 +17,25 @@
       "src": "logo512.png",
       "type": "image/png",
       "sizes": "512x512"
+    },
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
-  "start_url": ".",
+  "start_url": "/app/dashboard",
+  "scope": "/",
   "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
+  "theme_color": "#7e3af2",
+  "background_color": "#f9fafb",
+  "lang": "it",
+  "categories": ["games", "entertainment", "utilities"]
 }

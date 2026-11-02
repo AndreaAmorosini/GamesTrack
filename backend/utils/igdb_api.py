@@ -98,7 +98,7 @@ class IGDBAutoAuthClient:
         websites.category,
         game_modes.name,
         player_perspectives.name,
-        category,
+        game_type,
         status,
         total_rating,
         total_rating_count,
@@ -113,7 +113,7 @@ class IGDBAutoAuthClient:
             query += f'where id = {game_id};'
         else:
             query += f'''
-            where name ~ *"{game_name}"* & category = 0;
+            where name ~ *"{game_name}"* & game_type = 0;
             limit 1;
             '''
         print("[DEBUG] Querying IGDB for game metadata:", query)

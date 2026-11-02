@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import PageTitle from '../components/Typography/PageTitle'
-import SectionTitle from '../components/Typography/SectionTitle'
 import {
   Table,
   TableHeader,
@@ -19,13 +18,21 @@ import {
   ModalFooter,
 } from '@windmill/react-ui'
 import { TrashIcon } from '../icons'
+import GameNameLink from '../components/GameNameLink'
 import InfoCard from '../components/Cards/InfoCard'
 import RoundIcon from '../components/RoundIcon'
 import { GamesIcon, TrophyIcon, PlayIcon, StarIcon } from '../icons'
-import { getUserLibrary, getUserPlatformStats, syncPlatform, removeGameFromLibrary, checkSyncStatus, getConsoleNames } from '../services/api'
+import { TableSkeleton } from '../components/Skeletons'
+import { useSync } from '../context/SyncContext'
+import { useToast } from '../context/ToastContext'
+import { getUserLibrary, getUserPlatformStats, removeGameFromLibrary, getConsoleNames } from '../services/api'
 
 
 function MyLibrary() {
+  // Stato globale di sincronizzazione (condiviso con SyncJobs)
+  const { activeSync, isSyncing, startingPlatform, startSync } = useSync()
+  const { notify } = useToast()
+
   // Stati per i giochi
   const [games, setGames] = useState([])
   const [page, setPage] = useState(1)
@@ -37,6 +44,7 @@ function MyLibrary() {
   const [selectedPlatform, setSelectedPlatform] = useState('')
   const [sortBy, setSortBy] = useState('name')
   const [sortOrder, setSortOrder] = useState('asc')
+  const [showFilters, setShowFilters] = useState(false)
   
   // Stati per le modal
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -44,11 +52,6 @@ function MyLibrary() {
   // Nuovi stati per la selezione console
   const [selectedConsoleToRemove, setSelectedConsoleToRemove] = useState(null)
   const [showConsoleSelectionModal, setShowConsoleSelectionModal] = useState(false)
-  
-  // Stati per loading e sincronizzazione
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [syncStatus, setSyncStatus] = useState('')
-  const [syncJobId, setSyncJobId] = useState(null)
   
   // Statistiche
   const [stats, setStats] = useState({
@@ -62,36 +65,6 @@ function MyLibrary() {
 
   // Cache per i nomi delle console
   const [consoleNamesCache, setConsoleNamesCache] = useState({})
-
-  // Funzione generica per ottenere il nome della console
-  const getConsoleName = async (consoleCode) => {
-    // Se consoleCode è già una stringa (nome console), restituiscilo direttamente
-    if (typeof consoleCode === 'string') {
-      return consoleCode
-    }
-    
-    // Se è un numero (ID console), controlla la cache
-    if (consoleNamesCache[consoleCode]) {
-      return consoleNamesCache[consoleCode]
-    }
-    
-    // Se non è in cache, recupera dal database
-    try {
-      const response = await getConsoleNames([consoleCode])
-      const consoleName = response.console_names[consoleCode] || `Console ${consoleCode}`
-      
-      // Aggiorna la cache
-      setConsoleNamesCache(prev => ({
-        ...prev,
-        [consoleCode]: consoleName
-      }))
-      
-      return consoleName
-    } catch (error) {
-      console.error('Error getting console name:', error)
-      return `Console ${consoleCode}`
-    }
-  }
 
   // Versione sincrona per il rendering (usa solo la cache)
   const getConsoleNameSync = (consoleCode) => {
@@ -114,31 +87,6 @@ function MyLibrary() {
     return `Console ${consoleCode}`
   }
 
-  // Funzione per renderizzare le console come array (versione sincrona per la cache)
-  const renderConsoles = (game) => {
-    const consoles = game.console || []
-    
-    if (consoles.length === 0) {
-      return <span className="text-gray-400">Nessuna console</span>
-    }
-    
-    // Filtra i valori null e undefined
-    const validConsoles = consoles.filter(console => console !== null && console !== undefined)
-    
-    if (validConsoles.length === 0) {
-      return <span className="text-gray-400">Nessuna console</span>
-    }
-    
-    return (
-      <div className="flex flex-wrap gap-1">
-        {validConsoles.map((console, idx) => (
-          <Badge key={idx} type="success">
-            {getConsoleNameSync(console)}
-          </Badge>
-        ))}
-      </div>
-    )
-  }
 
   // Funzione per caricare i nomi delle console
   const loadConsoleNames = async (games) => {
@@ -222,6 +170,7 @@ function MyLibrary() {
   // Carica i giochi quando cambiano i filtri
   useEffect(() => {
     fetchGames()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, selectedPlatform, sortBy, sortOrder])
 
   // Ascolta gli eventi di modifica della libreria
@@ -259,74 +208,19 @@ function MyLibrary() {
     setPage(p)
   }
 
-  // Funzione per controllare lo stato della sincronizzazione
-  const checkSyncStatusLocal = async (jobId) => {
-    try {
-      const data = await checkSyncStatus(jobId)
-      return data.status
-    } catch (error) {
-      console.error('Errore nel controllo dello stato di sincronizzazione:', error)
-      return 'error'
-    }
-  }
-
-  // Funzione per monitorare la sincronizzazione
-  const monitorSync = async (jobId) => {
-    const maxAttempts = 60 // 5 minuti (5 secondi * 60)
-    let attempts = 0
-    
-    const checkStatus = async () => {
-      attempts++
-      const status = await checkSyncStatusLocal(jobId)
-      
-      if (status === 'completed' || status === 'success') {
-        setSyncStatus('Sincronizzazione completata! Nota: Se non vedi achievement/trofei, verifica che il tuo profilo Steam sia pubblico.')
-        setIsSyncing(false)
-        setSyncJobId(null)
-        // Ricarica i dati
-        await fetchGames()
-        setTimeout(() => setSyncStatus(''), 5000) // Nascondi messaggio dopo 5 secondi
-        return
-      } else if (status === 'failed' || status === 'error') {
-        setSyncStatus('Errore durante la sincronizzazione')
-        setIsSyncing(false)
-        setSyncJobId(null)
-        setTimeout(() => setSyncStatus(''), 5000) // Nascondi messaggio dopo 5 secondi
-        return
-      } else if (attempts >= maxAttempts) {
-        setSyncStatus('Timeout: la sincronizzazione sta impiegando troppo tempo')
-        setIsSyncing(false)
-        setSyncJobId(null)
-        setTimeout(() => setSyncStatus(''), 5000)
-        return
+  // Quando una sincronizzazione (gestita dal SyncContext globale) termina,
+  // ricarica la libreria e mostra il feedback via toast
+  const prevSyncRef = useRef(null)
+  useEffect(() => {
+    if (prevSyncRef.current && !activeSync) {
+      fetchGames()
+      if (prevSyncRef.current.status === 'success') {
+        notify('Sincronizzazione completata: libreria aggiornata', 'success')
       }
-      
-      // Continua a controllare ogni 5 secondi
-      setTimeout(checkStatus, 5000)
     }
-    
-    checkStatus()
-  }
-
-  // Sincronizza con una piattaforma
-  const handleSyncPlatform = async (platform) => {
-    try {
-      setIsSyncing(true)
-      setSyncStatus(`Avvio sincronizzazione con ${platform}...`)
-      
-      const data = await syncPlatform(platform)
-      setSyncJobId(data.job_id)
-      setSyncStatus(`Sincronizzazione avviata! Job ID: ${data.job_id}`)
-      
-      // Inizia il monitoraggio
-      monitorSync(data.job_id)
-      
-    } catch (err) {
-      setError(`Errore durante la sincronizzazione con ${platform}: ${err.message}`)
-      setIsSyncing(false)
-      setSyncStatus('')
-    }
-  }
+    prevSyncRef.current = activeSync
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSync])
 
   // Gestione eliminazione gioco
   const handleDeleteGame = (game) => {
@@ -356,13 +250,14 @@ function MyLibrary() {
       
       // Ricarica i giochi per mostrare le modifiche
       await fetchGames()
-      
+
       setIsDeleteModalOpen(false)
       setShowConsoleSelectionModal(false)
       setSelectedGame(null)
       setSelectedConsoleToRemove(null)
+      notify('Gioco rimosso dalla libreria', 'success')
     } catch (err) {
-      setError('Errore durante la rimozione del gioco: ' + err.message)
+      notify('Errore durante la rimozione del gioco: ' + err.message, 'error')
     }
   }
 
@@ -382,20 +277,14 @@ function MyLibrary() {
     <>
       <PageTitle>La Mia Libreria</PageTitle>
 
-      {/* Messaggio di stato sincronizzazione */}
-      {syncStatus && (
-        <div className={`mb-4 p-4 rounded-lg ${
-          syncStatus.includes('completata') 
-            ? 'bg-green-100 border border-green-400 text-green-700' 
-            : syncStatus.includes('Errore') || syncStatus.includes('Timeout')
-            ? 'bg-red-100 border border-red-400 text-red-700'
-            : 'bg-blue-100 border border-blue-400 text-blue-700'
-        }`}>
+      {/* Indicatore sync in corso (stato globale, feedback via toast) */}
+      {activeSync && (
+        <div className="mb-4 p-4 rounded-lg bg-blue-100 border border-blue-400 text-blue-700 dark:bg-blue-900 dark:border-blue-700 dark:text-blue-200">
           <div className="flex items-center">
-            {isSyncing && (
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
-            )}
-            <span>{syncStatus}</span>
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
+            <span>
+              Sincronizzazione {activeSync.platform} in corso — stato: {activeSync.status}
+            </span>
           </div>
         </div>
       )}
@@ -441,67 +330,69 @@ function MyLibrary() {
 
       {/* Controlli */}
       <div className="flex flex-col md:flex-row justify-between mb-8">
-        <div className="flex flex-col md:flex-row md:w-2/3 gap-4">
-          <Select
-            className="mt-1"
-            onChange={(e) => setSelectedPlatform(e.target.value)}
-            value={selectedPlatform}
+        <div className="md:w-2/3">
+          {/* Su mobile i filtri stanno dietro un pulsante, per risparmiare spazio */}
+          <Button
+            layout="outline"
+            size="small"
+            className="md:hidden"
+            onClick={() => setShowFilters(!showFilters)}
           >
-            <option value="">Tutte le piattaforme</option>
-            <option value="steam">Steam</option>
-            <option value="psn">PlayStation Network</option>
-            <option value="other">Manuali</option>
-          </Select>
+            Filtri {showFilters ? '−' : '+'}
+          </Button>
+          <div className={`${showFilters ? 'flex' : 'hidden'} md:flex flex-col md:flex-row gap-4 mt-2 md:mt-0`}>
+            <Select
+              className="mt-1"
+              onChange={(e) => setSelectedPlatform(e.target.value)}
+              value={selectedPlatform}
+            >
+              <option value="">Tutte le piattaforme</option>
+              <option value="steam">Steam</option>
+              <option value="psn">PlayStation Network</option>
+              <option value="retroachievements">RetroAchievements</option>
+              <option value="gog">GOG</option>
+              <option value="other">Manuali</option>
+            </Select>
 
-          <Select
-            className="mt-1"
-            onChange={(e) => setSortBy(e.target.value)}
-            value={sortBy}
-          >
-            <option value="name">Nome</option>
-            <option value="total_play_count">Ore giocate</option>
-            <option value="total_num_trophies">Trofei/Achievement</option>
-          </Select>
+            <Select
+              className="mt-1"
+              onChange={(e) => setSortBy(e.target.value)}
+              value={sortBy}
+            >
+              <option value="name">Nome</option>
+              <option value="total_play_count">Ore giocate</option>
+              <option value="total_num_trophies">Trofei/Achievement</option>
+            </Select>
 
-          <Select
-            className="mt-1"
-            onChange={(e) => setSortOrder(e.target.value)}
-            value={sortOrder}
-          >
-            <option value="asc">Crescente</option>
-            <option value="desc">Decrescente</option>
-          </Select>
+            <Select
+              className="mt-1"
+              onChange={(e) => setSortOrder(e.target.value)}
+              value={sortOrder}
+            >
+              <option value="asc">Crescente</option>
+              <option value="desc">Decrescente</option>
+            </Select>
+          </div>
         </div>
 
-        <div className="flex gap-4 mt-4 md:mt-0">
-          <Button 
-            onClick={() => handleSyncPlatform('steam')}
-            disabled={isSyncing}
-            className={isSyncing ? 'opacity-50 cursor-not-allowed' : ''}
-          >
-            {isSyncing && syncJobId ? (
-              <div className="flex items-center">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Sincronizzando...
-              </div>
-            ) : (
-              'Sincronizza Steam'
-            )}
-          </Button>
-          <Button 
-            onClick={() => handleSyncPlatform('psn')}
-            disabled={isSyncing}
-            className={isSyncing ? 'opacity-50 cursor-not-allowed' : ''}
-          >
-            {isSyncing && syncJobId ? (
-              <div className="flex items-center">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                Sincronizzando...
-              </div>
-            ) : (
-              'Sincronizza PSN'
-            )}
-          </Button>
+        <div className="flex flex-wrap gap-4 mt-4 md:mt-0">
+          {['steam', 'psn', 'retroachievements', 'gog'].map((platform) => (
+            <Button
+              key={platform}
+              onClick={() => startSync(platform)}
+              disabled={isSyncing}
+              className={isSyncing ? 'opacity-50 cursor-not-allowed' : ''}
+            >
+              {startingPlatform === platform || (isSyncing && activeSync) ? (
+                <div className="flex items-center">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Sincronizzando...
+                </div>
+              ) : (
+                `Sincronizza ${platform === 'steam' ? 'Steam' : platform === 'psn' ? 'PSN' : platform === 'retroachievements' ? 'RetroAchievements' : 'GOG'}`
+              )}
+            </Button>
+          ))}
         </div>
       </div>
 
@@ -530,11 +421,13 @@ function MyLibrary() {
                 <TableCell colSpan={6} className="text-center py-8">
                   <div className="text-gray-500 dark:text-gray-400">
                     {isLoading ? (
-                      <p>Caricamento giochi...</p>
+                      <div className="text-left">
+                        <TableSkeleton rows={5} cols={5} />
+                      </div>
                     ) : (
                       <div>
                         <p className="mb-2">Nessun gioco trovato nella tua libreria</p>
-                        <p className="text-sm">Prova a sincronizzare con Steam o PSN per aggiungere i tuoi giochi</p>
+                        <p className="text-sm">Avvia una sincronizzazione con i pulsanti qui sopra per aggiungere i tuoi giochi</p>
                       </div>
                     )}
                   </div>
@@ -555,7 +448,7 @@ function MyLibrary() {
                         }}
                       />
                       <div>
-                        <p className="font-semibold">{game.name}</p>
+                        <GameNameLink name={game.name} gameId={game.game_id} />
                       </div>
                     </div>
                   </TableCell>
@@ -587,7 +480,9 @@ function MyLibrary() {
                     <div className="flex flex-wrap gap-1">
                       {game.own_platforms && game.own_platforms.map((platform, idx) => (
                         <Badge key={idx} type="neutral">
-                          {platform}
+                          {platform === 'psn' && game.sources && game.sources.psn && game.sources.psn !== 'unknown'
+                            ? `${platform} (${game.sources.psn === 'digital' ? 'Digitale' : game.sources.psn === 'psplus' ? 'PS Plus' : game.sources.psn})`
+                            : platform}
                         </Badge>
                       ))}
                     </div>
@@ -675,16 +570,28 @@ function MyLibrary() {
         </ModalHeader>
         <ModalBody>
           {selectedGame && (
-            <p className="text-center">
-              {selectedConsoleToRemove ? 
-                `Sei sicuro di voler rimuovere "${selectedGame.name}" dalla libreria per ${getConsoleNameSync(selectedConsoleToRemove)}?` :
-                `Sei sicuro di voler rimuovere "${selectedGame.name}" dalla tua libreria?`
-              }
-              <br />
-              <span className="text-sm text-gray-500 dark:text-gray-400 mt-2 block">
-                Questa azione non può essere annullata.
-              </span>
-            </p>
+            <div className="text-center">
+              <img
+                className="w-20 h-20 object-cover rounded-lg mx-auto mb-3 bg-gray-100 dark:bg-gray-700"
+                src={selectedGame.cover_image || '/default_cover.png'}
+                alt={selectedGame.name}
+                onError={(e) => {
+                  e.target.onerror = null
+                  e.target.src = '/default_cover.png'
+                }}
+              />
+              <p className="font-semibold text-lg mb-2">{selectedGame.name}</p>
+              <p className="text-sm">
+                {selectedConsoleToRemove ?
+                  `Verrà rimosso dalla libreria per ${getConsoleNameSync(selectedConsoleToRemove)}.` :
+                  'Verrà rimosso dalla tua libreria.'
+                }
+                <br />
+                <span className="text-sm text-gray-500 dark:text-gray-400 mt-2 block">
+                  Questa azione non può essere annullata.
+                </span>
+              </p>
+            </div>
           )}
         </ModalBody>
         <ModalFooter className="flex justify-center">
